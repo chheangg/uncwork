@@ -111,8 +111,10 @@ export const buildLinkLayers = (
     data: events,
     pickable: false,
     getPosition: elevatedPosition,
-    getText: (e) =>
-      `${sensorLabel(e.sensorType)}  ${Math.round(e.confInt * 100)}%`,
+    getText: (e) => {
+      const id = e.callsign ?? sensorLabel(e.sensorType);
+      return `${id}  ${Math.round(e.confInt * 100)}%`;
+    },
     getSize: 13,
     getColor: [255, 245, 225, 245],
     getPixelOffset: [0, -42],

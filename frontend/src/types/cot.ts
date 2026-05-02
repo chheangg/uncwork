@@ -50,6 +50,7 @@ export type CotEvent = {
   ce?: number;
   le?: number;
   remarks?: string;
+  callsign?: string;
   confInt: number;
   status: LinkStatus;
 };

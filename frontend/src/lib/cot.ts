@@ -70,6 +70,7 @@ type RawCot = {
   ce?: number;
   le?: number;
   remarks?: string;
+  callsign?: string;
 };
 
 export const enrichCot = (raw: RawCot): CotEvent => ({

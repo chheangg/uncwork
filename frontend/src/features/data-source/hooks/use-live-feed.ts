@@ -29,6 +29,20 @@ const num = (v: string | null | undefined): number | undefined => {
 const ADSB_SENSOR: SensorType = "adsb";
 const FRIENDLY_AIR_COT = "a-f-A-C-F";
 
+// Backend prefixes uids with "unit_a-" / "unit_b-" so the same ICAO
+// arrives twice (once per sender unit). Strip the prefix so both
+// reports fuse into one track keyed by the canonical ICAO.
+const canonicalUid = (raw: string): string => {
+  const i = raw.indexOf("ICAO-");
+  return i >= 0 ? raw.slice(i) : raw;
+};
+
+const cleanCallsign = (raw: string | null | undefined): string | undefined => {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 const toCotEvent = (m: WireMessage) => {
   const lat = num(m.lat);
   const lon = num(m.lon);
@@ -36,7 +50,7 @@ const toCotEvent = (m: WireMessage) => {
   if (!m.uid) return null;
   const now = new Date().toISOString();
   return enrichCot({
-    uid: m.uid,
+    uid: canonicalUid(m.uid),
     cotType: FRIENDLY_AIR_COT,
     sensorType: ADSB_SENSOR,
     time: m.time ?? now,
@@ -45,10 +59,8 @@ const toCotEvent = (m: WireMessage) => {
     lat,
     lon,
     hae: num(m.hae),
-    remarks:
-      m.flight_number && m.flight_number.length > 0
-        ? `${m.flight_number} ${m.remarks ?? ""}`.trim()
-        : m.remarks ?? undefined,
+    callsign: cleanCallsign(m.flight_number),
+    remarks: m.remarks ?? undefined,
   });
 };
 
