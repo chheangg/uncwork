@@ -20,14 +20,18 @@ export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
     id: "confidence-heatmap",
     data: events,
     getPosition: (e) => [e.lon, e.lat],
-    // Baseline weight per track so the heatmap reads as density even
-    // when every track is high-confidence (e.g., live ADS-B). Extra
-    // weight stacks for low-confidence/uncertain tracks.
-    getWeight: (e) => 0.35 + (1 - e.confInt) * 0.65,
-    radiusPixels: 90,
-    intensity: 1.2,
-    threshold: 0.04,
-    colorRange: COLOR_RAMP,
+    // Weight encodes uncertainty (1 - confInt) with a small density
+    // baseline so high-confidence tracks still register as faint heat.
+    getWeight: (e) => 0.15 + (1 - e.confInt) * 0.85,
+    // Anchor the gradient to absolute weight. Without this, deck.gl
+    // auto-normalizes the visible max to the top of the ramp, so a
+    // single high-confidence track would render as the critical-red
+    // top stop instead of the healthy-green low stop.
+    colorDomain: [0.1, 1],
     aggregation: "MEAN",
+    colorRange: COLOR_RAMP,
+    radiusPixels: 90,
+    intensity: 1.1,
+    threshold: 0.04,
     opacity: 0.8,
   });
