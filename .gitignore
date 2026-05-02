@@ -1,0 +1,18 @@
+# env (any depth)
+.env
+.env.*
+!.env.example
+
+# editor / agent state
+.claude/
+.idea/
+.vscode/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# build artifacts (defensive; subdirs have their own .gitignore too)
+node_modules/
+dist/
+target/
