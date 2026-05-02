@@ -30,11 +30,21 @@ const worstOf = (a: LinkStatus, b: LinkStatus): LinkStatus =>
 // Tracks within this many on-screen pixels collapse into a cluster.
 const CLUSTER_RADIUS_PX = 56;
 
+// Below this zoom we cluster; at or above we render every track
+// individually. Default view (~11.5 in SF) stays uncluttered and
+// shows real icons; only when the operator zooms out to see the
+// whole region do tracks collapse into count bubbles.
+const CLUSTER_MAX_ZOOM = 11;
+
 // Web Mercator: at zoom z, the world is 256 * 2^z pixels wide, so 1
 // pixel maps to (360 / (256 * 2^z)) degrees of longitude. Latitude
 // shrinks toward the poles, but for clustering on a city scale the
 // lon scale is close enough.
 export const clusterPaths = (paths: Track[], zoom: number): ClusterResult => {
+  if (zoom >= CLUSTER_MAX_ZOOM) {
+    return { singletons: paths, clusters: [] };
+  }
+
   const degPerPx = 360 / (256 * Math.pow(2, zoom));
   const cellDeg = degPerPx * CLUSTER_RADIUS_PX;
   if (cellDeg <= 0 || !Number.isFinite(cellDeg)) {
