@@ -75,7 +75,9 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
     println!("Listening for CoT on 0.0.0.0:9999...");
 
     let mut buf = [0u8; 4096];
-    let mut seen_uids: HashSet<String> = HashSet::new();
+    // Dedup by (uid, time) so retransmitted packets are dropped
+    // but legitimate position updates for the same uid pass through.
+    let mut seen_frames: HashSet<(String, String)> = HashSet::new();
     let mut next_expected_seq: u64 = 1;
 
     loop {
@@ -99,12 +101,17 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
         match parse_cot(&xml) {
             Some(data) => {
                 let uid = data.uid.clone().unwrap_or_default();
+                let time_key = data.time.clone().unwrap_or_default();
+                let frame_key = (uid.clone(), time_key);
 
-                if seen_uids.contains(&uid) {
+                if seen_frames.contains(&frame_key) {
                     println!("DUPLICATE suppressed: {}\n", uid);
                     continue;
                 }
-                seen_uids.insert(uid.clone());
+                seen_frames.insert(frame_key);
+                if seen_frames.len() > 8192 {
+                    seen_frames.clear();
+                }
 
                 // Sequence number is embedded in remarks ("... seq=N")
                 if let Some(seq) = data.remarks.as_deref().and_then(parse_seq_from_remarks) {

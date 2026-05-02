@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
+const hmrHost = process.env.VITE_HMR_HOST;
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -13,11 +15,9 @@ export default defineConfig({
     host: true,
     port: 5173,
     strictPort: true,
-    allowedHosts: ["95fb-4-78-254-114.ngrok-free.app", ".ngrok-free.app"],
-    hmr: {
-      protocol: "wss",
-      host: "95fb-4-78-254-114.ngrok-free.app",
-      clientPort: 443,
-    },
+    allowedHosts: [".ngrok-free.app", ".ngrok.app", ".ngrok.io"],
+    hmr: hmrHost
+      ? { protocol: "wss", host: hmrHost, clientPort: 443 }
+      : undefined,
   },
 });
