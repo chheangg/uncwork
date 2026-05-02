@@ -10,11 +10,15 @@ use std::time::{Duration, Instant};
 
 const LISTENER_URL: &str = "http://127.0.0.1:3000";
 
-// Fixed ground positions for each sensor unit (~4.6 miles apart, within the 5-mile neighbor radius)
-const UNIT_A_LAT: f64 = 37.8072; // Marin Headlands / Golden Gate
-const UNIT_A_LON: f64 = -122.4325;
-const UNIT_B_LAT: f64 = 37.8590; // Sausalito
-const UNIT_B_LON: f64 = -122.4852;
+// Fixed ground positions: eastern Ukraine, ~4.6 miles apart within the 5-mile neighbor radius
+const UNIT_A_LAT: f64 = 48.5000; // NW of Donetsk front
+const UNIT_A_LON: f64 = 36.9800;
+const UNIT_B_LAT: f64 = 48.4600; // SE position
+const UNIT_B_LON: f64 = 37.0600;
+
+// Primary data source: newline-delimited CoT XML file.
+// Falls back to OpenSky ADS-B if the file is not found.
+const NDXML_PATH: &str = "interactive_multi_asset.ndxml";
 
 // Fallback bbox for the very first fetch before the listener tells us
 // the frontend's viewport. Roughly the SF bay area.
@@ -329,6 +333,7 @@ fn run_sender(
     chaos: ChaosConfig,
     sensor_lat: f64,
     sensor_lon: f64,
+    ndxml_messages: Option<Vec<String>>,
 ) {
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", bind_port))
         .unwrap_or_else(|e| panic!("[{unit}] failed to bind port {bind_port}: {e}"));
@@ -339,9 +344,11 @@ fn run_sender(
     let mut queue: VecDeque<String> = VecDeque::new();
     let mut seq = 0u64;
     let mut last_tick = Instant::now();
+    let mut ndxml_idx: usize = 0;
 
     loop {
         // Drain any new fetches from the OpenSky thread (non-blocking).
+        // In ndxml mode this channel stays empty; the drain is harmless.
         while let Ok(batch) = rx.try_recv() {
             for sv in &batch {
                 state
@@ -356,28 +363,34 @@ fn run_sender(
             );
         }
 
-        // Tick once per EMIT_TICK_MS: extrapolate every aircraft and queue
-        // a CoT message for it.
+        // Tick once per EMIT_TICK_MS: queue the next message(s).
         let now = Instant::now();
         if now.duration_since(last_tick) >= Duration::from_millis(EMIT_TICK_MS) {
             let dt = now.duration_since(last_tick).as_secs_f64();
-            for ac in state.values_mut() {
-                let anchor_age = now.duration_since(ac.last_anchor);
-                if anchor_age >= Duration::from_secs(EMIT_SKIP_AFTER_SECS) {
-                    continue;
-                }
-                ac.extrapolate(dt);
-                ac.last_emit = now;
+
+            if let Some(ref msgs) = ndxml_messages {
+                // NDXML mode: emit one message per tick, cycling through the file.
                 seq += 1;
-                queue.push_back(ac.to_cot(seq, unit, sensor_lat, sensor_lon));
+                let raw = &msgs[ndxml_idx % msgs.len()];
+                ndxml_idx += 1;
+                queue.push_back(inject_ndxml(raw, seq, unit, sensor_lat, sensor_lon));
+            } else {
+                // ADS-B mode: extrapolate every tracked aircraft and queue CoT.
+                for ac in state.values_mut() {
+                    let anchor_age = now.duration_since(ac.last_anchor);
+                    if anchor_age >= Duration::from_secs(EMIT_SKIP_AFTER_SECS) {
+                        continue;
+                    }
+                    ac.extrapolate(dt);
+                    ac.last_emit = now;
+                    seq += 1;
+                    queue.push_back(ac.to_cot(seq, unit, sensor_lat, sensor_lon));
+                }
+                state.retain(|_, ac| {
+                    now.duration_since(ac.last_anchor) < Duration::from_secs(ANCHOR_MAX_AGE_SECS)
+                });
             }
             last_tick = now;
-
-            // Drop tracks that haven't been refreshed by OpenSky in a while.
-            state.retain(|_, ac| {
-                now.duration_since(ac.last_anchor)
-                    < Duration::from_secs(ANCHOR_MAX_AGE_SECS)
-            });
         }
 
         // Apply chaos and ship whatever's queued.
@@ -425,13 +438,113 @@ fn run_sender(
 }
 
 fn main() {
+    let ndxml = load_ndxml(NDXML_PATH);
+    let using_ndxml = ndxml.is_some();
+
     let (tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
     let (tx_b, rx_b) = mpsc::channel::<Vec<StateVector>>();
 
-    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON));
-    thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON));
+    let msgs_a = ndxml.clone();
+    let msgs_b = ndxml;
 
-    run_fetcher(vec![tx_a, tx_b]);
+    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON, msgs_a));
+    thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON, msgs_b));
+
+    if using_ndxml {
+        println!("[main] ndxml mode active; ADS-B fetcher disabled");
+        loop { thread::sleep(Duration::from_secs(3600)); }
+    } else {
+        run_fetcher(vec![tx_a, tx_b]);
+    }
+}
+
+// Locate the ndxml file by trying CWD first, then walking up from the binary's
+// location. The binary lives at <repo>/backend/target/release/sender, so 4 pops
+// land at the repo root where the .ndxml file lives.
+fn find_ndxml(filename: &str) -> Option<std::path::PathBuf> {
+    let cwd_path = std::path::Path::new(filename);
+    if cwd_path.exists() {
+        return Some(cwd_path.to_path_buf());
+    }
+    if let Ok(mut exe) = std::env::current_exe() {
+        for _ in 0..4 {
+            exe.pop();
+        }
+        exe.push(filename);
+        if exe.exists() {
+            return Some(exe);
+        }
+    }
+    None
+}
+
+fn load_ndxml(path: &str) -> Option<Vec<String>> {
+    let resolved = match find_ndxml(path) {
+        Some(p) => p,
+        None => {
+            println!("[ndxml] could not find {} — falling back to ADS-B", path);
+            return None;
+        }
+    };
+    match std::fs::read_to_string(&resolved) {
+        Ok(content) => {
+            let lines: Vec<String> = content
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.to_string())
+                .collect();
+            if lines.is_empty() {
+                println!("[ndxml] file is empty, falling back to ADS-B");
+                None
+            } else {
+                println!("[ndxml] loaded {} messages from {}", lines.len(), resolved.display());
+                Some(lines)
+            }
+        }
+        Err(e) => {
+            println!("[ndxml] could not read {}: {} — falling back to ADS-B", resolved.display(), e);
+            None
+        }
+    }
+}
+
+// Replace the value of a single XML attribute (first occurrence only).
+fn replace_xml_attr(s: &str, attr: &str, value: &str) -> String {
+    let pattern = format!("{}=\"", attr);
+    if let Some(start) = s.find(&pattern) {
+        let val_start = start + pattern.len();
+        if let Some(end_offset) = s[val_start..].find('"') {
+            let mut result = s.to_string();
+            result.replace_range(val_start..val_start + end_offset, value);
+            return result;
+        }
+    }
+    s.to_string()
+}
+
+// Take a raw ndxml line and stamp it with current timestamps, inject <sensor>,
+// and append a remarks element carrying the sender unit and seq number.
+fn inject_ndxml(raw: &str, seq: u64, unit: &str, sensor_lat: f64, sensor_lon: f64) -> String {
+    let now = Utc::now();
+    let stale = now + chrono::Duration::seconds(60);
+    let now_str = now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let stale_str = stale.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+
+    let s = replace_xml_attr(raw, "time", &now_str);
+    let s = replace_xml_attr(&s, "start", &now_str);
+    let s = replace_xml_attr(&s, "stale", &stale_str);
+
+    // Inject sensor position element before </detail>
+    let sensor_tag = format!("<sensor lat=\"{}\" lon=\"{}\"/>", sensor_lat, sensor_lon);
+    let s = s.replace("</detail>", &format!("{}</detail>", sensor_tag));
+
+    // Attach unit + seq to remarks, adding the element if absent
+    let remarks_suffix = format!("unit={} seq={}", unit, seq);
+    if s.contains("<remarks>") {
+        s.replace("</remarks>", &format!(" {}</remarks>", remarks_suffix))
+    } else {
+        s.replace("</event>", &format!("<remarks>{}</remarks></event>", remarks_suffix))
+    }
 }
 
 fn corrupt_message(input: &str, rng: &mut impl RngExt) -> String {
