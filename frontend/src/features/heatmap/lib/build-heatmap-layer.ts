@@ -1,31 +1,27 @@
-import { HexagonLayer } from "@deck.gl/aggregation-layers";
+import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
 
-const COLOR_RAMP: [number, number, number][] = [
-  [40, 90, 60],
-  [120, 200, 110],
-  [230, 220, 90],
-  [255, 150, 60],
-  [240, 70, 50],
-  [200, 20, 20],
+const COLOR_RAMP: [number, number, number, number][] = [
+  [0, 0, 0, 0],
+  [40, 130, 70, 60],
+  [100, 200, 90, 110],
+  [220, 220, 80, 160],
+  [255, 150, 60, 200],
+  [240, 70, 50, 220],
+  [200, 20, 20, 230],
 ];
 
 export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
-  new HexagonLayer<CotEvent>({
-    id: "confidence-hex",
+  new HeatmapLayer<CotEvent>({
+    id: "confidence-heatmap",
     data: events,
-    pickable: false,
-    extruded: false,
-    radius: 180,
-    coverage: 0.92,
     getPosition: (e) => [e.lon, e.lat],
-    getColorWeight: (e) => 1 - e.confInt,
-    colorAggregation: "MEAN",
+    getWeight: (e) => 1 - e.confInt,
+    radiusPixels: 90,
+    intensity: 1.1,
+    threshold: 0.04,
     colorRange: COLOR_RAMP,
-    upperPercentile: 98,
-    opacity: 0.55,
-    transitions: {
-      getColorWeight: { duration: 2400, type: "interpolation" },
-    },
+    aggregation: "MEAN",
+    opacity: 0.7,
   });
