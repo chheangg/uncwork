@@ -13,9 +13,8 @@ const SIZE = 64;
 const BADGE_SIZE = 28;
 const SYMBOL_INSET = 3;
 
-// MIL-STD-2525C SIDC per dimension. Affiliation is hard-coded to F
-// (Friend) because the app filters to friendly-only tracks; if that
-// constraint relaxes, derive position 2 from event.affiliation.
+// MIL-STD-2525C SIDC per dimension. Position 2 is hard-coded to F
+// (Friend) -- this is a friendly-only C2 console.
 //
 // Position 3 is the battle dimension code; positions 5-10 are the
 // function ID. milsymbol pads short SIDCs to 15 chars internally.

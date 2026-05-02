@@ -3,14 +3,14 @@ import type { LinkStatus } from "@/types/cot";
 export type RGBA = [number, number, number, number];
 
 const STATUS_COLORS: Record<LinkStatus, RGBA> = {
-  healthy: [74, 222, 128, 220],
-  degraded: [255, 209, 102, 220],
-  critical: [255, 20, 20, 240],
-  offline: [120, 110, 110, 180],
+  healthy: [0, 255, 136, 255],      // Bright cyan-green
+  degraded: [255, 215, 0, 255],     // Bright gold
+  critical: [255, 107, 53, 255],    // Bright orange-red
+  offline: [140, 150, 160, 200],    // Gray
 };
 
 export const statusColor = (status: LinkStatus): RGBA =>
   STATUS_COLORS[status];
 
 export const radiusFromConfidence = (confInt: number): number =>
-  60 + (1 - confInt) * 90;
+  70 + (1 - confInt) * 100;

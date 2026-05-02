@@ -71,6 +71,7 @@ export type MockTrack = {
   health: number;
   vHealth: number;
   delayed: boolean;
+  forcedStatus?: "critical" | "offline"; // Force specific status for some tracks
 };
 
 const TRACK_MIX: { category: MockCategory; count: number }[] = [
@@ -89,6 +90,26 @@ export const seedTracks = (_count?: number): MockTrack[] => {
       const dimension = DIMENSION_BY_CATEGORY[category];
       const mult = VELOCITY_MULT[category];
       const sensorType = pick(SENSORS_BY_DIMENSION[dimension]);
+      
+      // 5% chance of critical status, 3% chance of offline status
+      let forcedStatus: "critical" | "offline" | undefined;
+      const statusRoll = Math.random();
+      if (statusRoll < 0.03) {
+        forcedStatus = "offline";
+      } else if (statusRoll < 0.08) {
+        forcedStatus = "critical";
+      }
+      
+      // If forcing critical/offline, set health accordingly
+      let initialHealth: number;
+      if (forcedStatus === "offline") {
+        initialHealth = randInRange(0.01, 0.07); // Very low health for offline
+      } else if (forcedStatus === "critical") {
+        initialHealth = randInRange(0.08, 0.29); // Low health for critical
+      } else {
+        initialHealth = randInRange(0.55, 0.95); // Normal health range
+      }
+      
       tracks.push({
         uid: `mock-${i.toString().padStart(3, "0")}`,
         category,
@@ -99,12 +120,13 @@ export const seedTracks = (_count?: number): MockTrack[] => {
         lon: randInRange(west, east),
         vLat: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
         vLon: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
-        health: randInRange(0.55, 0.95),
+        health: initialHealth,
         vHealth: randInRange(
           -HEALTH_STEP_BY_CATEGORY[category],
           HEALTH_STEP_BY_CATEGORY[category],
         ),
         delayed: false,
+        forcedStatus,
       });
     }
   }
@@ -113,7 +135,7 @@ export const seedTracks = (_count?: number): MockTrack[] => {
 
 export const stepTrack = (track: MockTrack): MockTrack => {
   const { west, east, south, north } = PRESET_BBOX;
-  let { lat, lon, vLat, vLon, health, vHealth, delayed } = track;
+  let { lat, lon, vLat, vLon, health, vHealth, delayed, forcedStatus } = track;
   const step = HEALTH_STEP_BY_CATEGORY[track.category];
 
   if (track.category !== "sensor") {
@@ -123,10 +145,24 @@ export const stepTrack = (track: MockTrack): MockTrack => {
     if (lon < west || lon > east) vLon = -vLon;
   }
 
-  vHealth += randInRange(-step * 0.4, step * 0.4);
-  vHealth = clamp(vHealth, -step, step);
-  health = clamp(health + vHealth, HEALTH_MIN, HEALTH_MAX);
-  if (health === HEALTH_MIN || health === HEALTH_MAX) vHealth = -vHealth * 0.5;
+  // If track has forced status, keep health in appropriate range
+  if (forcedStatus === "offline") {
+    // Keep health very low (0.01-0.07)
+    vHealth += randInRange(-step * 0.2, step * 0.2);
+    vHealth = clamp(vHealth, -step * 0.5, step * 0.5);
+    health = clamp(health + vHealth, 0.01, 0.07);
+  } else if (forcedStatus === "critical") {
+    // Keep health low (0.08-0.29)
+    vHealth += randInRange(-step * 0.3, step * 0.3);
+    vHealth = clamp(vHealth, -step * 0.8, step * 0.8);
+    health = clamp(health + vHealth, 0.08, 0.29);
+  } else {
+    // Normal health behavior
+    vHealth += randInRange(-step * 0.4, step * 0.4);
+    vHealth = clamp(vHealth, -step, step);
+    health = clamp(health + vHealth, HEALTH_MIN, HEALTH_MAX);
+    if (health === HEALTH_MIN || health === HEALTH_MAX) vHealth = -vHealth * 0.5;
+  }
 
   if (delayed) {
     if (Math.random() < DELAY_EXIT_PROB) delayed = false;
@@ -134,7 +170,7 @@ export const stepTrack = (track: MockTrack): MockTrack => {
     delayed = true;
   }
 
-  return { ...track, lat, lon, vLat, vLon, health, vHealth, delayed };
+  return { ...track, lat, lon, vLat, vLon, health, vHealth, delayed, forcedStatus };
 };
 
 export const emitFromTrack = (track: MockTrack): CotEvent => {

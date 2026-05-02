@@ -161,7 +161,7 @@ export const App = () => {
       <MapView layers={layers} onTrackContext={handleTrackContext} />
       {crt && <div className="crt-overlay" />}
       <MissionHeader trackCount={events.length} meanConfidence={meanConf} />
-      <aside className="pointer-events-auto absolute top-16 left-3 z-10 flex w-72 flex-col gap-3">
+      <aside className="pointer-events-auto absolute top-8 left-2 z-10 flex w-45 flex-col gap-2">
         <DataSourceToggle />
         <LayerTogglePanel />
         <StatusSummary
@@ -171,7 +171,7 @@ export const App = () => {
         />
       </aside>
       {!detailOpen && (
-        <aside className="pointer-events-auto absolute top-16 right-3 z-10 flex w-72 flex-col gap-3">
+        <aside className="pointer-events-auto absolute top-8 right-2 z-10 flex w-45 flex-col gap-2">
           <TypeLegend />
         </aside>
       )}

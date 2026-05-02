@@ -6,9 +6,6 @@ import {
   type LogEntryKind,
 } from "@/stores/log";
 import { useSelectionStore } from "@/stores/selection";
-import { useEventStore, selectEventList } from "@/stores/events";
-import type { Dimension, SensorType } from "@/types/cot";
-import { Filter, X, ChevronDown, ChevronRight } from "lucide-react";
 
 const KIND_TONE: Record<LogEntryKind, string> = {
   status: "text-terminal-yellow",
@@ -21,126 +18,94 @@ const KIND_TONE: Record<LogEntryKind, string> = {
 };
 
 const KIND_LABEL: Record<LogEntryKind, string> = {
-  status: "STATUS",
-  delivery: "DELIVERY",
-  track: "TRACK",
+  status: "STA",
+  delivery: "DEL",
+  track: "TRK",
   operator: "OPS",
   recommendation: "AI",
   "recommendation-action": "AI",
   system: "SYS",
 };
 
-type FilterGroup = {
-  key: string;
-  label: string;
-  kinds: LogEntryKind[];
-};
+type KindGroup = { key: string; label: string; kinds: LogEntryKind[] };
 
-const FILTER_GROUPS: FilterGroup[] = [
-  { key: "status", label: "STATUS", kinds: ["status"] },
-  { key: "delivery", label: "DELIVERY", kinds: ["delivery"] },
-  { key: "track", label: "TRACK", kinds: ["track"] },
+const KIND_GROUPS: KindGroup[] = [
+  { key: "status", label: "STA", kinds: ["status"] },
+  { key: "delivery", label: "DEL", kinds: ["delivery"] },
+  { key: "track", label: "TRK", kinds: ["track"] },
   { key: "ops", label: "OPS", kinds: ["operator", "recommendation-action"] },
   { key: "ai", label: "AI", kinds: ["recommendation"] },
   { key: "system", label: "SYS", kinds: ["system"] },
 ];
-
-const DIMENSION_LABELS: Record<Dimension, string> = {
-  air: "AIR",
-  space: "SPACE",
-  ground: "GROUND",
-  sea_surface: "SEA",
-  sea_subsurface: "SUB",
-  sof: "SOF",
-  sensor: "SENSOR",
-  other: "OTHER",
-};
-
-const SENSOR_LABELS: Record<SensorType, string> = {
-  radar: "RADAR",
-  sonar: "SONAR",
-  eo_ir: "EO/IR",
-  sigint: "SIGINT",
-  acoustic: "ACOUSTIC",
-  seismic: "SEISMIC",
-  ais: "AIS",
-  lidar: "LIDAR",
-  ew: "EW",
-  adsb: "ADS-B",
-};
 
 const fmtTs = (ms: number): string => {
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
-  const ms3 = String(d.getMilliseconds()).padStart(3, "0");
-  return `${hh}:${mm}:${ss}.${ms3}`;
+  return `${hh}:${mm}:${ss}`;
 };
+
+type DropdownKey = "kind" | "track" | null;
 
 export const EventTerminal = () => {
   const entries = useLogStore(selectLogEntries);
-  const events = useEventStore(selectEventList);
   const select = useSelectionStore((s) => s.select);
-  const [activeKinds, setActiveKinds] = useState<Set<string>>(
-    () => new Set(FILTER_GROUPS.map((g) => g.key)),
+  const [open, setOpen] = useState(false);
+  const [activeKindKeys, setActiveKindKeys] = useState<Set<string>>(
+    () => new Set(KIND_GROUPS.map((g) => g.key)),
   );
-  const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
-  const [collapsed, setCollapsed] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [expandedDimension, setExpandedDimension] = useState<Dimension | null>(null);
-  const [expandedSensor, setExpandedSensor] = useState<SensorType | null>(null);
+  const [excludedUids, setExcludedUids] = useState<Set<string>>(new Set());
+  const [dropdown, setDropdown] = useState<DropdownKey>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickyRef = useRef(true);
 
-  // Group events by dimension and sensor
-  const eventsByDimension = useMemo(() => {
-    const map = new Map<Dimension, typeof events>();
-    for (const e of events) {
-      const list = map.get(e.dimension) ?? [];
-      list.push(e);
-      map.set(e.dimension, list);
+  const uidCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of entries) {
+      if (e.uid) m.set(e.uid, (m.get(e.uid) ?? 0) + 1);
     }
-    return map;
-  }, [events]);
-
-  const eventsBySensor = useMemo(() => {
-    const map = new Map<SensorType, typeof events>();
-    for (const e of events) {
-      const list = map.get(e.sensorType) ?? [];
-      list.push(e);
-      map.set(e.sensorType, list);
-    }
-    return map;
-  }, [events]);
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [entries]);
 
   const allowedKinds = useMemo(() => {
     const set = new Set<LogEntryKind>();
-    for (const g of FILTER_GROUPS) {
-      if (activeKinds.has(g.key)) {
+    for (const g of KIND_GROUPS) {
+      if (activeKindKeys.has(g.key)) {
         for (const k of g.kinds) set.add(k);
       }
     }
     return set;
-  }, [activeKinds]);
+  }, [activeKindKeys]);
 
-  const visible = useMemo<LogEntry[]>(() => {
-    let filtered = entries.filter((e) => allowedKinds.has(e.kind));
+  const visible = useMemo<LogEntry[]>(
+    () =>
+      entries.filter(
+        (e) =>
+          allowedKinds.has(e.kind) &&
+          (!e.uid || !excludedUids.has(e.uid)),
+      ),
+    [entries, allowedKinds, excludedUids],
+  );
 
-    // Apply UID filter if any selected
-    if (selectedUids.size > 0) {
-      filtered = filtered.filter((e) => e.uid && selectedUids.has(e.uid));
-    }
-
-    return filtered;
-  }, [entries, allowedKinds, selectedUids]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (dropdown) setDropdown(null);
+        else setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, dropdown]);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickyRef.current) {
+    if (el && stickyRef.current && open) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [visible.length, collapsed]);
+  }, [visible.length, open, dropdown]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -149,8 +114,8 @@ export const EventTerminal = () => {
     stickyRef.current = atBottom;
   };
 
-  const toggleKindFilter = (key: string) =>
-    setActiveKinds((s) => {
+  const toggleKind = (key: string) =>
+    setActiveKindKeys((s) => {
       const next = new Set(s);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -158,400 +123,276 @@ export const EventTerminal = () => {
     });
 
   const toggleUid = (uid: string) =>
-    setSelectedUids((s) => {
+    setExcludedUids((s) => {
       const next = new Set(s);
       if (next.has(uid)) next.delete(uid);
       else next.add(uid);
       return next;
     });
 
-  const selectAllInDimension = (dim: Dimension) => {
-    const uids = eventsByDimension.get(dim)?.map((e) => e.uid) ?? [];
-    setSelectedUids((s) => {
-      const next = new Set(s);
-      for (const uid of uids) next.add(uid);
-      return next;
-    });
-  };
+  const totalKinds = KIND_GROUPS.length;
+  const activeKindCount = activeKindKeys.size;
+  const totalUids = uidCounts.length;
+  const includedUids = totalUids - excludedUids.size;
 
-  const deselectAllInDimension = (dim: Dimension) => {
-    const uids = new Set(eventsByDimension.get(dim)?.map((e) => e.uid) ?? []);
-    setSelectedUids((s) => {
-      const next = new Set(s);
-      for (const uid of uids) next.delete(uid);
-      return next;
-    });
-  };
-
-  const selectAllInSensor = (sensor: SensorType) => {
-    const uids = eventsBySensor.get(sensor)?.map((e) => e.uid) ?? [];
-    setSelectedUids((s) => {
-      const next = new Set(s);
-      for (const uid of uids) next.add(uid);
-      return next;
-    });
-  };
-
-  const deselectAllInSensor = (sensor: SensorType) => {
-    const uids = new Set(eventsBySensor.get(sensor)?.map((e) => e.uid) ?? []);
-    setSelectedUids((s) => {
-      const next = new Set(s);
-      for (const uid of uids) next.delete(uid);
-      return next;
-    });
-  };
-
-  const selectAllKinds = () => {
-    setActiveKinds(new Set(FILTER_GROUPS.map((g) => g.key)));
-  };
-
-  const clearAllKinds = () => {
-    setActiveKinds(new Set());
-  };
-
-  const clearAllFilters = () => {
-    selectAllKinds();
-    setSelectedUids(new Set());
-  };
-
-  const allKindsSelected = activeKinds.size === FILTER_GROUPS.length;
-  const hasFilters = activeKinds.size < FILTER_GROUPS.length || selectedUids.size > 0;
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="pointer-events-auto fixed bottom-7 right-3 z-30 panel px-2.5 py-1 text-[10px] tracking-widest text-terminal-accent hover:bg-terminal-accent/10 hover:border-terminal-accent"
+        title="Open event log"
+      >
+        ▸ EVENT LOG
+        <span className="ml-1.5 text-terminal-dim tabular-nums">
+          {entries.length}
+        </span>
+      </button>
+    );
+  }
 
   return (
-    <aside className="pointer-events-auto absolute bottom-9 right-3 z-20 flex w-[600px] flex-col">
+    <aside className="pointer-events-auto fixed bottom-7 right-3 z-30 flex w-[560px] flex-col">
       <div className="panel">
         <header className="flex items-center justify-between gap-2 border-b border-terminal-border px-2 py-1.5">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setCollapsed((c) => !c)}
-              className="label text-terminal-accent hover:text-terminal-fg"
-              aria-label={collapsed ? "Expand event terminal" : "Collapse event terminal"}
-            >
-              {collapsed ? "▸" : "▾"} EVENT TERMINAL
-            </button>
-            <span className="label text-terminal-dim tabular-nums">
-              {visible.length}/{entries.length}
-            </span>
-            {selectedUids.size > 0 && (
-              <span className="px-1.5 py-0.5 text-[8px] tracking-widest bg-terminal-accent/10 text-terminal-accent border border-terminal-accent/30">
-                {selectedUids.size} SELECTED
-              </span>
-            )}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="label text-terminal-accent hover:text-terminal-fg"
+          >
+            ▾ EVENT LOG
+          </button>
+          <span className="label text-terminal-dim tabular-nums">
+            {visible.length}/{entries.length}
+          </span>
+          <div className="flex flex-1 justify-end gap-1.5">
+            <FilterButton
+              label="KIND"
+              count={`${activeKindCount}/${totalKinds}`}
+              active={activeKindCount < totalKinds}
+              open={dropdown === "kind"}
+              onClick={() =>
+                setDropdown((d) => (d === "kind" ? null : "kind"))
+              }
+            />
+            <FilterButton
+              label="TRACK"
+              count={`${includedUids}/${totalUids}`}
+              active={excludedUids.size > 0}
+              open={dropdown === "track"}
+              onClick={() =>
+                setDropdown((d) => (d === "track" ? null : "track"))
+              }
+            />
           </div>
           <button
             type="button"
-            onClick={() => setShowAdvanced((s) => !s)}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[9px] tracking-widest border transition ${
-              showAdvanced
-                ? "border-terminal-accent text-terminal-accent bg-terminal-accent/5"
-                : "border-terminal-border text-terminal-dim hover:border-terminal-fg/40 hover:text-terminal-fg/70"
-            }`}
-            title="Toggle advanced filters"
+            onClick={() => setOpen(false)}
+            className="text-terminal-dim hover:text-terminal-accent text-[9px] tracking-widest"
           >
-            <Filter size={10} />
-            FILTERS
+            ESC
           </button>
         </header>
 
-        {showAdvanced && !collapsed && (
-          <div className="border-b border-terminal-border px-2 py-2 space-y-3 max-h-[300px] overflow-y-auto">
-            {/* Event Type Filters */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="label text-terminal-fg">EVENT TYPE</span>
-                <div className="flex gap-1">
-                  {!allKindsSelected && (
-                    <button
-                      onClick={selectAllKinds}
-                      className="text-[8px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                    >
-                      ALL
-                    </button>
-                  )}
-                  {activeKinds.size > 0 && (
-                    <button
-                      onClick={clearAllKinds}
-                      className="text-[8px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                    >
-                      NONE
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {FILTER_GROUPS.map((g) => {
-                  const on = activeKinds.has(g.key);
-                  return (
-                    <button
-                      key={g.key}
-                      type="button"
-                      onClick={() => toggleKindFilter(g.key)}
-                      className={`relative px-2 py-1 text-[9px] font-bold tracking-widest border transition-all ${
-                        on
-                          ? "border-terminal-accent text-terminal-accent bg-terminal-accent/10 shadow-sm"
-                          : "border-terminal-border/50 text-terminal-dim hover:border-terminal-fg/40 hover:text-terminal-fg/70 hover:bg-terminal-fg/5"
+        {dropdown === "kind" && (
+          <DropdownPanel
+            title="Filter by kind"
+            actions={[
+              {
+                label: "ALL",
+                onClick: () =>
+                  setActiveKindKeys(new Set(KIND_GROUPS.map((g) => g.key))),
+              },
+              {
+                label: "NONE",
+                onClick: () => setActiveKindKeys(new Set()),
+              },
+            ]}
+          >
+            <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+              {KIND_GROUPS.map((g) => {
+                const on = activeKindKeys.has(g.key);
+                return (
+                  <label
+                    key={g.key}
+                    className="flex cursor-pointer items-center gap-1.5 text-[10px] hover:text-terminal-fg"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleKind(g.key)}
+                      className="accent-terminal-accent"
+                    />
+                    <span
+                      className={`tracking-widest ${
+                        on ? KIND_TONE[g.kinds[0]!] : "text-terminal-dim line-through"
                       }`}
                     >
-                      {on && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-terminal-accent rounded-full" />
-                      )}
                       {g.label}
-                    </button>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </DropdownPanel>
+        )}
+
+        {dropdown === "track" && (
+          <DropdownPanel
+            title={`Filter by track (${totalUids} known)`}
+            actions={[
+              {
+                label: "ALL",
+                onClick: () => setExcludedUids(new Set()),
+              },
+              {
+                label: "NONE",
+                onClick: () =>
+                  setExcludedUids(new Set(uidCounts.map(([u]) => u))),
+              },
+            ]}
+          >
+            {uidCounts.length === 0 ? (
+              <div className="text-terminal-dim text-[10px] italic">
+                no tracks in log
+              </div>
+            ) : (
+              <div className="grid max-h-[150px] grid-cols-3 gap-x-2 gap-y-0.5 overflow-y-auto pr-1">
+                {uidCounts.map(([uid, n]) => {
+                  const included = !excludedUids.has(uid);
+                  return (
+                    <label
+                      key={uid}
+                      className="flex cursor-pointer items-center gap-1 text-[10px] hover:text-terminal-fg"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={included}
+                        onChange={() => toggleUid(uid)}
+                        className="accent-terminal-accent"
+                      />
+                      <span
+                        className={`flex-1 truncate font-mono ${
+                          included
+                            ? "text-terminal-fg/90"
+                            : "text-terminal-dim line-through"
+                        }`}
+                      >
+                        {uid}
+                      </span>
+                      <span className="text-terminal-dim tabular-nums">
+                        {n}
+                      </span>
+                    </label>
                   );
                 })}
               </div>
-            </div>
+            )}
+          </DropdownPanel>
+        )}
 
-            {/* Dimension Filters */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="label text-terminal-fg">BY DIMENSION</span>
-                {selectedUids.size > 0 && (
-                  <button
-                    onClick={() => setSelectedUids(new Set())}
-                    className="flex items-center gap-0.5 text-[8px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                  >
-                    <X size={10} />
-                    CLEAR
-                  </button>
-                )}
-              </div>
-              <div className="space-y-1">
-                {(Object.keys(DIMENSION_LABELS) as Dimension[])
-                  .filter((dim) => eventsByDimension.has(dim))
-                  .map((dim) => {
-                    const eventsInDim = eventsByDimension.get(dim)!;
-                    const expanded = expandedDimension === dim;
-                    const selectedCount = eventsInDim.filter((e) =>
-                      selectedUids.has(e.uid),
-                    ).length;
-                    return (
-                      <div key={dim} className="border border-terminal-border/30">
-                        <button
-                          onClick={() =>
-                            setExpandedDimension(expanded ? null : dim)
-                          }
-                          className="w-full flex items-center justify-between px-2 py-1 hover:bg-terminal-fg/5 transition"
-                        >
-                          <div className="flex items-center gap-2">
-                            {expanded ? (
-                              <ChevronDown size={12} className="text-terminal-dim" />
-                            ) : (
-                              <ChevronRight size={12} className="text-terminal-dim" />
-                            )}
-                            <span className="text-[9px] font-bold tracking-widest text-terminal-fg">
-                              {DIMENSION_LABELS[dim]}
-                            </span>
-                            <span className="text-[8px] text-terminal-dim">
-                              ({eventsInDim.length})
-                            </span>
-                          </div>
-                          {selectedCount > 0 && (
-                            <span className="text-[8px] text-terminal-accent">
-                              {selectedCount} selected
-                            </span>
-                          )}
-                        </button>
-                        {expanded && (
-                          <div className="border-t border-terminal-border/30 px-2 py-1 bg-terminal-bg/50">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[7px] text-terminal-dim tracking-widest">
-                                SELECT TRACKS
-                              </span>
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => selectAllInDimension(dim)}
-                                  className="text-[7px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                                >
-                                  ALL
-                                </button>
-                                <button
-                                  onClick={() => deselectAllInDimension(dim)}
-                                  className="text-[7px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                                >
-                                  NONE
-                                </button>
-                              </div>
-                            </div>
-                            <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                              {eventsInDim.map((e) => {
-                                const selected = selectedUids.has(e.uid);
-                                return (
-                                  <button
-                                    key={e.uid}
-                                    onClick={() => toggleUid(e.uid)}
-                                    className={`w-full text-left px-1.5 py-0.5 text-[8px] font-mono transition ${
-                                      selected
-                                        ? "bg-terminal-accent/10 text-terminal-accent"
-                                        : "text-terminal-fg/70 hover:bg-terminal-fg/5"
-                                    }`}
-                                  >
-                                    {e.callsign || e.uid}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* Sensor Type Filters */}
-            <div>
-              <span className="label text-terminal-fg block mb-1.5">BY SENSOR TYPE</span>
-              <div className="space-y-1">
-                {(Object.keys(SENSOR_LABELS) as SensorType[])
-                  .filter((sensor) => eventsBySensor.has(sensor))
-                  .map((sensor) => {
-                    const eventsInSensor = eventsBySensor.get(sensor)!;
-                    const expanded = expandedSensor === sensor;
-                    const selectedCount = eventsInSensor.filter((e) =>
-                      selectedUids.has(e.uid),
-                    ).length;
-                    return (
-                      <div key={sensor} className="border border-terminal-border/30">
-                        <button
-                          onClick={() =>
-                            setExpandedSensor(expanded ? null : sensor)
-                          }
-                          className="w-full flex items-center justify-between px-2 py-1 hover:bg-terminal-fg/5 transition"
-                        >
-                          <div className="flex items-center gap-2">
-                            {expanded ? (
-                              <ChevronDown size={12} className="text-terminal-dim" />
-                            ) : (
-                              <ChevronRight size={12} className="text-terminal-dim" />
-                            )}
-                            <span className="text-[9px] font-bold tracking-widest text-terminal-fg">
-                              {SENSOR_LABELS[sensor]}
-                            </span>
-                            <span className="text-[8px] text-terminal-dim">
-                              ({eventsInSensor.length})
-                            </span>
-                          </div>
-                          {selectedCount > 0 && (
-                            <span className="text-[8px] text-terminal-accent">
-                              {selectedCount} selected
-                            </span>
-                          )}
-                        </button>
-                        {expanded && (
-                          <div className="border-t border-terminal-border/30 px-2 py-1 bg-terminal-bg/50">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[7px] text-terminal-dim tracking-widest">
-                                SELECT TRACKS
-                              </span>
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => selectAllInSensor(sensor)}
-                                  className="text-[7px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                                >
-                                  ALL
-                                </button>
-                                <button
-                                  onClick={() => deselectAllInSensor(sensor)}
-                                  className="text-[7px] text-terminal-dim hover:text-terminal-accent tracking-widest"
-                                >
-                                  NONE
-                                </button>
-                              </div>
-                            </div>
-                            <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                              {eventsInSensor.map((e) => {
-                                const selected = selectedUids.has(e.uid);
-                                return (
-                                  <button
-                                    key={e.uid}
-                                    onClick={() => toggleUid(e.uid)}
-                                    className={`w-full text-left px-1.5 py-0.5 text-[8px] font-mono transition ${
-                                      selected
-                                        ? "bg-terminal-accent/10 text-terminal-accent"
-                                        : "text-terminal-fg/70 hover:bg-terminal-fg/5"
-                                    }`}
-                                  >
-                                    {e.callsign || e.uid}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* Reset All Button */}
-            {hasFilters && (
-              <div className="pt-1 border-t border-terminal-border/50">
-                <button
-                  onClick={clearAllFilters}
-                  className="w-full px-2 py-1 text-[9px] font-bold tracking-widest border border-terminal-border/50 text-terminal-dim hover:border-terminal-accent hover:text-terminal-accent hover:bg-terminal-accent/5 transition-all"
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="h-[220px] overflow-y-auto px-2 py-1 font-mono text-[10px] leading-snug"
+        >
+          {visible.length === 0 ? (
+            <div className="text-terminal-dim italic">no events</div>
+          ) : (
+            visible.map((e) => {
+              const clickable = !!e.uid;
+              return (
+                <div
+                  key={e.id}
+                  onClick={() => {
+                    if (e.uid) select(e.uid);
+                  }}
+                  className={`flex items-baseline gap-2 ${
+                    clickable
+                      ? "cursor-pointer hover:bg-terminal-fg/5"
+                      : ""
+                  }`}
+                  title={clickable ? "Click to select track" : undefined}
                 >
-                  RESET ALL FILTERS
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!collapsed && (
-          <div
-            ref={scrollRef}
-            onScroll={onScroll}
-            className="h-[200px] overflow-y-auto px-2 py-1 font-mono text-[10px] leading-snug"
-          >
-            {visible.length === 0 ? (
-              <div className="text-terminal-dim italic">
-                {hasFilters ? "no events match filters" : "no events"}
-              </div>
-            ) : (
-              visible.map((e) => {
-                const clickable = !!e.uid;
-                return (
-                  <div
-                    key={e.id}
-                    onClick={() => {
-                      if (e.uid) select(e.uid);
-                    }}
-                    className={`flex items-baseline gap-2 ${
-                      clickable
-                        ? "cursor-pointer hover:bg-terminal-fg/5"
-                        : ""
-                    }`}
-                    title={clickable ? "Click to select track" : undefined}
+                  <span className="text-terminal-dim tabular-nums shrink-0">
+                    {fmtTs(e.ts)}
+                  </span>
+                  <span
+                    className={`w-9 shrink-0 tracking-widest ${KIND_TONE[e.kind]}`}
                   >
-                    <span className="text-terminal-dim tabular-nums shrink-0">
-                      {fmtTs(e.ts)}
-                    </span>
-                    <span
-                      className={`w-12 shrink-0 tracking-widest ${KIND_TONE[e.kind]}`}
-                    >
-                      {KIND_LABEL[e.kind]}
-                    </span>
-                    <span className="w-24 shrink-0 truncate text-terminal-fg/80">
-                      {e.uid ?? ""}
-                    </span>
-                    {e.dimension && (
-                      <span className="px-1 py-0.5 text-[7px] tracking-wider bg-terminal-fg/5 text-terminal-dim border border-terminal-border/30">
-                        {DIMENSION_LABELS[e.dimension]}
-                      </span>
-                    )}
-                    <span className="truncate text-terminal-fg/95">
-                      {e.summary}
-                    </span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                    {KIND_LABEL[e.kind]}
+                  </span>
+                  <span className="w-24 shrink-0 truncate text-terminal-fg/80">
+                    {e.uid ?? ""}
+                  </span>
+                  <span className="truncate text-terminal-fg/95">
+                    {e.summary}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </aside>
   );
 };
+
+const FilterButton = ({
+  label,
+  count,
+  active,
+  open,
+  onClick,
+}: {
+  label: string;
+  count: string;
+  active: boolean;
+  open: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`px-1.5 py-0.5 text-[9px] tracking-widest border transition ${
+      open
+        ? "border-terminal-accent text-terminal-accent bg-terminal-accent/10"
+        : active
+          ? "border-terminal-accent text-terminal-accent bg-terminal-accent/5"
+          : "border-terminal-border text-terminal-dim hover:border-terminal-fg/40 hover:text-terminal-fg/70"
+    }`}
+  >
+    {label}{" "}
+    <span className="tabular-nums opacity-80">{count}</span>{" "}
+    {open ? "▴" : "▾"}
+  </button>
+);
+
+const DropdownPanel = ({
+  title,
+  actions,
+  children,
+}: {
+  title: string;
+  actions: { label: string; onClick: () => void }[];
+  children: React.ReactNode;
+}) => (
+  <div className="border-b border-terminal-border bg-terminal-panel2/40 px-2 py-1.5">
+    <div className="mb-1 flex items-center justify-between">
+      <span className="label text-terminal-dim">{title}</span>
+      <div className="flex gap-1">
+        {actions.map((a) => (
+          <button
+            key={a.label}
+            type="button"
+            onClick={a.onClick}
+            className="border border-terminal-border px-1.5 py-0.5 text-[9px] tracking-widest text-terminal-dim hover:border-terminal-fg/40 hover:text-terminal-fg"
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+    </div>
+    {children}
+  </div>
+);

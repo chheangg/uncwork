@@ -1,42 +1,60 @@
-import { ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
 import { statusColor } from "@/features/links/lib/link-style";
 
-// One translucent disc per track, status-colored, sized by
-// (1 - confInt). Rendered with additive blending so overlapping
-// discs sum their RGB and brighten where density accumulates --
-// gives a heatmap merge feel without the GPU aggregation cost of
-// HeatmapLayer (kernel rasterize + multi-pass smoothing per layer
-// per data change). Cost here is "draw N antialiased circles": the
-// same as the IconLayer.
-const ALPHA = 70;
-const RADIUS_MIN_PX = 24;
-const RADIUS_MAX_PX = 110;
+// Soft-edged disc sprite: a single radial-gradient SVG used by every
+// track. mask: true tells IconLayer to treat the sprite's alpha as a
+// stencil and use getColor for the actual RGB -- so the gradient
+// falloff happens once at sprite bake time, and each track tints it
+// with its status color at render time. Combined with additive
+// blending, overlapping discs fizz out into a soft glow instead of
+// stacking as hard circles.
+const SPRITE_PX = 128;
+const SOFT_DISC_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${SPRITE_PX}" height="${SPRITE_PX}" viewBox="0 0 ${SPRITE_PX} ${SPRITE_PX}">` +
+  `<defs><radialGradient id="g" cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" gradientUnits="userSpaceOnUse">` +
+  `<stop offset="0" stop-color="#fff" stop-opacity="1"/>` +
+  `<stop offset="0.35" stop-color="#fff" stop-opacity="0.65"/>` +
+  `<stop offset="0.7" stop-color="#fff" stop-opacity="0.22"/>` +
+  `<stop offset="1" stop-color="#fff" stop-opacity="0"/>` +
+  `</radialGradient></defs>` +
+  `<circle cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" fill="url(#g)"/>` +
+  `</svg>`;
 
-const radiusFor = (e: CotEvent): number =>
-  RADIUS_MIN_PX + (1 - e.confInt) * (RADIUS_MAX_PX - RADIUS_MIN_PX);
+const SOFT_DISC = {
+  url: `data:image/svg+xml;utf8,${encodeURIComponent(SOFT_DISC_SVG)}`,
+  width: SPRITE_PX,
+  height: SPRITE_PX,
+  mask: true as const,
+};
+
+const ALPHA = 180;
+const SIZE_MIN_PX = 80;
+const SIZE_MAX_PX = 280;
+
+const sizeFor = (e: CotEvent): number =>
+  SIZE_MIN_PX + (1 - e.confInt) * (SIZE_MAX_PX - SIZE_MIN_PX);
 
 export const buildHeatmapLayers = (events: CotEvent[]): Layer[] => {
   const visible = events.filter((e) => e.status !== "offline");
   return [
-    new ScatterplotLayer<CotEvent>({
+    new IconLayer<CotEvent>({
       id: "confidence-heatmap",
       data: visible,
       pickable: false,
-      stroked: false,
-      filled: true,
-      antialiasing: true,
-      radiusUnits: "pixels",
+      sizeUnits: "pixels",
+      billboard: true,
+      getIcon: () => SOFT_DISC,
       getPosition: (e) => [e.lon, e.lat, 0],
-      getRadius: radiusFor,
-      getFillColor: (e) => {
+      getSize: sizeFor,
+      getColor: (e) => {
         const [r, g, b] = statusColor(e.status);
         return [r, g, b, ALPHA];
       },
       updateTriggers: {
-        getRadius: visible.map((e) => e.confInt.toFixed(2)).join(","),
-        getFillColor: visible.map((e) => e.status).join(","),
+        getSize: visible.map((e) => e.confInt.toFixed(2)).join(","),
+        getColor: visible.map((e) => e.status).join(","),
       },
       parameters: {
         depthCompare: "always",

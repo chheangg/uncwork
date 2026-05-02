@@ -32,6 +32,11 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
   const deckRef = useRef<DeckGLRef | null>(null);
   const buildingsVisible = useLayersStore((s) => s.visible.buildings);
+  const mapStyle = useLayersStore((s) => s.mapStyle);
+
+  const mapStyleUrl = mapStyle === "satellite" 
+    ? "mapbox://styles/mapbox/satellite-streets-v12"
+    : env.mapStyleUrl;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -47,9 +52,20 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
     if (!mapReady) return;
     const map = mapRef.current?.getMap();
     if (!map) return;
-    ensureTerrain(map);
-    ensureBuildingLayer(map);
-    setBuildingVisibility(map, buildingsVisible);
+    // Mapbox wipes custom sources/layers (DEM terrain, our extruded
+    // building layer) every time the style swaps. Re-apply on the
+    // initial mount AND on every style.load so flipping DRK <-> SAT
+    // doesn't strip terrain or stop showing buildings.
+    const apply = () => {
+      ensureTerrain(map);
+      ensureBuildingLayer(map);
+      setBuildingVisibility(map, buildingsVisible);
+    };
+    apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
   }, [mapReady, buildingsVisible]);
 
   const setBbox = useViewportStore((s) => s.set);
@@ -145,11 +161,12 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
         <Map
           ref={mapRef}
           mapboxAccessToken={env.mapboxToken}
-          mapStyle={env.mapStyleUrl}
+          mapStyle={mapStyleUrl}
           onLoad={handleLoad}
           onMoveEnd={captureBbox}
           reuseMaps
           attributionControl={false}
+          projection={{ name: "globe" }}
         />
       </DeckGL>
     </div>

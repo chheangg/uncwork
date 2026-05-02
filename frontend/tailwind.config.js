@@ -3,6 +3,9 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      spacing: {
+        '45': '11.25rem', // 180px
+      },
       fontFamily: {
         mono: [
           "JetBrains Mono",
@@ -14,24 +17,24 @@ export default {
       },
       colors: {
         terminal: {
-          bg: "#0a0203",
-          panel: "#160708",
-          panel2: "#1f0a0c",
-          border: "#3a1216",
-          fg: "#ffd0d0",
-          dim: "#8a4a4f",
-          accent: "#ff3a3a",
-          hot: "#ff1414",
-          amber: "#ff8c42",
-          yellow: "#ffd166",
-          green: "#4ade80",
+          bg: "#030a0f",
+          panel: "#071318",
+          panel2: "#0a1a22",
+          border: "#1a3a4a",
+          fg: "#d0f0ff",
+          dim: "#4a7a8a",
+          accent: "#00d9ff",
+          hot: "#ff6b35",
+          amber: "#ffa500",
+          yellow: "#ffd700",
+          green: "#00ff88",
           blue: "#58a6ff",
-          gray: "#5a4347",
+          gray: "#5a6a7a",
         },
       },
       boxShadow: {
-        glow: "0 0 10px rgba(255,58,58,0.6)",
-        glowSoft: "0 0 18px rgba(255,58,58,0.25)",
+        glow: "0 0 10px rgba(0,217,255,0.6)",
+        glowSoft: "0 0 18px rgba(0,217,255,0.25)",
       },
       animation: {
         pulse: "pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite",

@@ -20,16 +20,23 @@
 
 @layer components {
   .panel {
-    @apply bg-terminal-panel/85 border border-terminal-border backdrop-blur-sm shadow-glowSoft;
+    @apply bg-terminal-panel/85 border border-terminal-border backdrop-blur-sm;
   }
   .panel-hot {
-    @apply bg-terminal-panel/90 border border-terminal-accent/70 shadow-glow;
+    @apply bg-terminal-panel/90 border border-terminal-accent/70;
   }
   .label {
-    @apply text-[10px] uppercase tracking-[0.18em] text-terminal-dim;
+    @apply text-[9px] uppercase tracking-[0.2em] text-terminal-dim font-bold;
   }
   .stat {
-    @apply text-[11px] tabular-nums tracking-tight text-terminal-fg;
+    @apply text-[9px] tabular-nums tracking-tight text-terminal-fg;
+  }
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
   .crt-overlay {
     pointer-events: none;
@@ -38,8 +45,8 @@
     background:
       repeating-linear-gradient(
         0deg,
-        rgba(255, 58, 58, 0.05) 0px,
-        rgba(255, 58, 58, 0.05) 1px,
+        rgba(0, 217, 255, 0.03) 0px,
+        rgba(0, 217, 255, 0.03) 1px,
         transparent 1px,
         transparent 3px
       );
@@ -53,7 +60,7 @@
     background: radial-gradient(
       ellipse at center,
       transparent 55%,
-      rgba(40, 0, 0, 0.7) 100%
+      rgba(0, 40, 60, 0.7) 100%
     );
   }
   .replay-scrubber {
