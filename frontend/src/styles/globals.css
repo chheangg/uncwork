@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+  }
+  body {
+    @apply bg-terminal-bg text-terminal-fg font-mono antialiased;
+    font-feature-settings: "calt" 0;
+  }
+  ::selection {
+    @apply bg-terminal-accent/40 text-terminal-fg;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-terminal-panel/80 border border-terminal-border backdrop-blur-sm;
+  }
+  .label {
+    @apply text-[10px] uppercase tracking-[0.18em] text-terminal-dim;
+  }
+  .crt-overlay {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(
+        0deg,
+        rgba(0, 255, 0, 0.03) 0px,
+        rgba(0, 255, 0, 0.03) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    mix-blend-mode: screen;
+    z-index: 50;
+  }
+  .crt-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      ellipse at center,
+      transparent 60%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
+  }
+}
