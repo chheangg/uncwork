@@ -10,7 +10,7 @@ const LAYERS: { key: LayerKey; label: string }[] = [
 ];
 
 const MAP_STYLES: { key: MapStyle; label: string }[] = [
-  { key: "dark", label: "DRK" },
+  { key: "topo", label: "TOPO" },
   { key: "satellite", label: "SAT" },
 ];
 

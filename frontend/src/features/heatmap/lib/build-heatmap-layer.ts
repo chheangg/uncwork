@@ -11,12 +11,14 @@ import { statusColor } from "@/features/links/lib/link-style";
 // blending, overlapping discs fizz out into a soft glow instead of
 // stacking as hard circles.
 const SPRITE_PX = 128;
+// Lower center opacity so additive blend doesn't saturate to white
+// after 2-3 overlapping discs. Falloff stays smooth.
 const SOFT_DISC_SVG =
   `<svg xmlns="http://www.w3.org/2000/svg" width="${SPRITE_PX}" height="${SPRITE_PX}" viewBox="0 0 ${SPRITE_PX} ${SPRITE_PX}">` +
   `<defs><radialGradient id="g" cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" gradientUnits="userSpaceOnUse">` +
-  `<stop offset="0" stop-color="#fff" stop-opacity="1"/>` +
-  `<stop offset="0.35" stop-color="#fff" stop-opacity="0.65"/>` +
-  `<stop offset="0.7" stop-color="#fff" stop-opacity="0.22"/>` +
+  `<stop offset="0" stop-color="#fff" stop-opacity="0.78"/>` +
+  `<stop offset="0.4" stop-color="#fff" stop-opacity="0.42"/>` +
+  `<stop offset="0.75" stop-color="#fff" stop-opacity="0.14"/>` +
   `<stop offset="1" stop-color="#fff" stop-opacity="0"/>` +
   `</radialGradient></defs>` +
   `<circle cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" fill="url(#g)"/>` +
@@ -29,7 +31,11 @@ const SOFT_DISC = {
   mask: true as const,
 };
 
-const ALPHA = 180;
+// Per-disc alpha: dialed down from 180 -> 105. Combined with the
+// dimmer status palette and lower SVG center opacity, three
+// overlapping discs land at a comfortable highlight rather than
+// blowing out to white.
+const ALPHA = 105;
 const SIZE_MIN_PX = 80;
 const SIZE_MAX_PX = 280;
 
