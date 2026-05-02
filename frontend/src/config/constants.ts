@@ -2,7 +2,7 @@ export const PRESET_VIEW = {
   longitude: 30.5234,
   latitude: 50.4501,
   zoom: 12.2,
-  pitch: 55,
+  pitch: 60,
   bearing: -18,
   minZoom: 8,
   maxZoom: 19,

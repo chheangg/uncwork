@@ -62,7 +62,7 @@ export const ensureTerrain = (map: MapInstance) => {
       maxzoom: 14,
     });
   }
-  map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.6 });
+  map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 2.5 });
 };
 
 export const ensureBuildingLayer = (map: MapInstance) => {
