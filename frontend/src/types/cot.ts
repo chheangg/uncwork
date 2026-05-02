@@ -14,14 +14,10 @@ export type Dimension =
   | "sea_subsurface"
   | "space"
   | "sof"
+  | "sensor"
   | "other";
 
-export type LinkStatus =
-  | "healthy"
-  | "degraded"
-  | "critical"
-  | "stale"
-  | "offline";
+export type LinkStatus = "healthy" | "degraded" | "critical" | "offline";
 
 export type SensorType =
   | "radar"
@@ -43,7 +39,7 @@ export type CotEvent = {
   sensorType: SensorType;
   time: string;
   start: string;
-  stale: string;
+  staleAt: string;
   lat: number;
   lon: number;
   hae?: number;
@@ -53,4 +49,5 @@ export type CotEvent = {
   callsign?: string;
   confInt: number;
   status: LinkStatus;
+  stale: boolean;
 };

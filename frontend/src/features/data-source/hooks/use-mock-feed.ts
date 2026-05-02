@@ -8,8 +8,7 @@ import {
   type MockTrack,
 } from "@/mock/fake-cot";
 
-const TRACK_COUNT = 28;
-const TICK_MS = 2500;
+const TICK_MS = 500;
 
 export const useMockFeed = () => {
   const source = useDataSourceStore((s) => s.source);
@@ -24,7 +23,7 @@ export const useMockFeed = () => {
       return;
     }
 
-    tracksRef.current = seedTracks(TRACK_COUNT);
+    tracksRef.current = seedTracks();
     upsertMany(tracksRef.current.map(emitFromTrack));
 
     const id = window.setInterval(() => {

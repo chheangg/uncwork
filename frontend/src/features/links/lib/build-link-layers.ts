@@ -17,6 +17,7 @@ const ALTITUDE: Record<Dimension, number> = {
   ground: 25,
   sea_surface: 10,
   sea_subsurface: 5,
+  sensor: 8,
   other: 25,
 };
 
@@ -41,21 +42,26 @@ const statusAlpha = (
   confInt: number,
   uid: string,
   animTime: number,
+  stale: boolean,
 ): number => {
   const base = 0.45 + confInt * 0.55;
   const phase = animTime * 4 + (hash(uid) % 31);
+  let alpha: number;
   switch (status) {
     case "healthy":
-      return base;
+      alpha = base;
+      break;
     case "degraded":
-      return base * (0.55 + 0.45 * Math.sin(phase));
+      alpha = base * (0.55 + 0.45 * Math.sin(phase));
+      break;
     case "critical":
-      return base * (0.4 + 0.5 * Math.sin(phase * 1.4));
-    case "stale":
-      return base * 0.55;
+      alpha = base * (0.4 + 0.5 * Math.sin(phase * 1.4));
+      break;
     case "offline":
-      return 0.3;
+      alpha = 0.3;
+      break;
   }
+  return stale ? alpha * 0.85 : alpha;
 };
 
 export const buildLinkLayers = (
@@ -94,7 +100,13 @@ export const buildLinkLayers = (
       255,
       Math.round(
         255 *
-          statusAlpha(p.latest.status, p.latest.confInt, p.uid, animTime),
+          statusAlpha(
+            p.latest.status,
+            p.latest.confInt,
+            p.uid,
+            animTime,
+            p.latest.stale,
+          ),
       ),
     ],
     sizeMinPixels: 30,
@@ -104,7 +116,10 @@ export const buildLinkLayers = (
     updateTriggers: {
       getPosition: renderTime,
       getIcon: paths
-        .map((p) => `${p.latest.status}|${p.latest.recentlyAffected}`)
+        .map(
+          (p) =>
+            `${p.latest.status}|${p.latest.recentlyAffected}|${p.latest.stale ? 1 : 0}`,
+        )
         .join(","),
       getColor: animTime,
     },

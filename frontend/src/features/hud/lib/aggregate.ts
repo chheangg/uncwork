@@ -7,7 +7,6 @@ const STATUS_KEYS: LinkStatus[] = [
   "healthy",
   "degraded",
   "critical",
-  "stale",
   "offline",
 ];
 const AFFILIATION_KEYS: Affiliation[] = [
@@ -36,6 +35,12 @@ export const countByAffiliation = (events: CotEvent[]): AffiliationCounts => {
   const counts = emptyAffiliation();
   for (const e of events) counts[e.affiliation] += 1;
   return counts;
+};
+
+export const countStale = (events: CotEvent[]): number => {
+  let n = 0;
+  for (const e of events) if (e.stale) n += 1;
+  return n;
 };
 
 export const meanConfidence = (events: CotEvent[]): number => {

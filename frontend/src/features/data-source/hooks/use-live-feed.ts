@@ -62,7 +62,7 @@ const toCotEvent = (m: WireMessage) => {
     sensorType: ADSB_SENSOR,
     time: m.time ?? now,
     start: m.start ?? now,
-    stale: m.stale ?? new Date(Date.now() + 60_000).toISOString(),
+    staleAt: m.stale ?? new Date(Date.now() + 60_000).toISOString(),
     lat,
     lon,
     hae: num(m.hae),

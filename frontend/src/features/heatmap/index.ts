@@ -1,1 +1,1 @@
-export { buildHeatmapLayer } from "./lib/build-heatmap-layer";
+export { buildHeatmapLayers } from "./lib/build-heatmap-layer";

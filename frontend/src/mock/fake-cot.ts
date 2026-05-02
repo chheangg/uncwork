@@ -1,58 +1,51 @@
 import { PRESET_BBOX } from "@/config/constants";
-import { enrichCot, parseDimension } from "@/lib/cot";
+import { enrichCot } from "@/lib/cot";
 import { SENSORS_BY_DIMENSION } from "@/lib/sensor";
 import type { CotEvent, Dimension, SensorType } from "@/types/cot";
 
-const COT_TYPES = [
-  "a-f-A-W-D",
-  "a-f-A-W-D",
-  "a-f-A-W-D-S",
-  "a-f-A-W-D-S",
-  "a-f-A-W-D-R",
-  "a-f-A-M-H",
-  "a-f-A-M-F",
-  "a-f-G-E-S-R",
-  "a-f-G-E-S-R",
-  "a-f-G-E-S-S",
-  "a-f-G-E-S-O",
-  "a-f-G-U-S",
-  "a-f-G-U-S",
-  "a-f-G-U-C",
-  "a-f-G-U-C-I",
-  "a-f-S-X-M",
-  "a-f-S-X-S",
-  "a-f-U-S-S",
-  "a-f-P-S",
-  "a-f-F-T",
-];
+export type MockCategory = "sensor" | "ground" | "air";
 
-const REMARK_FRAGMENTS = [
-  "patrol",
-  "static",
-  "uav",
-  "convoy",
-  "outpost",
-  "checkpoint",
-  "drone",
-  "asset",
-  "sensor",
-  "buoy",
-];
-
-const POSITION_VEL = 0.001;
-const VELOCITY_MULT: Record<Dimension, number> = {
-  air: 6,
-  ground: 1,
-  sea_surface: 1.5,
-  sea_subsurface: 0.5,
-  space: 0.2,
-  sof: 1.5,
-  other: 1,
+const COT_BY_CATEGORY: Record<MockCategory, string[]> = {
+  sensor: ["a-f-X-S-S", "a-f-X-S-R", "a-f-X-S-O"],
+  ground: ["a-f-G-U-S", "a-f-G-U-C", "a-f-G-E-S-R", "a-f-G-E-S-S"],
+  air: ["a-f-A-W-D", "a-f-A-M-H", "a-f-A-M-F", "a-f-A-W-D-R"],
 };
 
-const HEALTH_STEP = 0.012;
+const DIMENSION_BY_CATEGORY: Record<MockCategory, Dimension> = {
+  sensor: "sensor",
+  ground: "ground",
+  air: "air",
+};
+
+const REMARK_FRAGMENTS: Record<MockCategory, string[]> = {
+  sensor: ["radar-sta", "eo-tower", "sigint-post", "acoustic-array", "seismic-node"],
+  ground: ["patrol", "convoy", "checkpoint", "outpost"],
+  air: ["uav", "drone", "patrol", "recon"],
+};
+
+// Mock ticks at 500ms (see use-mock-feed.ts). Per-tick deltas were
+// originally tuned for a 2.5s tick; everything below is scaled to
+// keep the same per-second motion / decay / delay rates while
+// emitting 5x more samples for smoother icon interpolation.
+const POSITION_VEL = 0.00016;
+const VELOCITY_MULT: Record<MockCategory, number> = {
+  sensor: 0,
+  ground: 1,
+  air: 6,
+};
+
+const HEALTH_STEP_BY_CATEGORY: Record<MockCategory, number> = {
+  sensor: 0.0036,
+  ground: 0.0024,
+  air: 0.0024,
+};
 const HEALTH_MIN = 0.05;
 const HEALTH_MAX = 0.99;
+
+const DELAY_ENTER_PROB = 0.008;
+const DELAY_EXIT_PROB = 0.036;
+const DELAY_BACK_S_MIN = 25;
+const DELAY_BACK_S_MAX = 95;
 
 const clamp = (n: number, min: number, max: number) =>
   Math.min(max, Math.max(min, n));
@@ -67,6 +60,7 @@ const pick = <T,>(arr: readonly T[]): T =>
 
 export type MockTrack = {
   uid: string;
+  category: MockCategory;
   cotType: string;
   dimension: Dimension;
   sensorType: SensorType;
@@ -76,52 +70,80 @@ export type MockTrack = {
   vLon: number;
   health: number;
   vHealth: number;
+  delayed: boolean;
 };
 
-export const seedTracks = (count: number): MockTrack[] => {
+const TRACK_MIX: { category: MockCategory; count: number }[] = [
+  { category: "sensor", count: 10 },
+  { category: "ground", count: 9 },
+  { category: "air", count: 9 },
+];
+
+export const seedTracks = (_count?: number): MockTrack[] => {
   const { west, east, south, north } = PRESET_BBOX;
-  return Array.from({ length: count }, (_, i) => {
-    const cotType = pick(COT_TYPES);
-    const dimension = parseDimension(cotType);
-    const mult = VELOCITY_MULT[dimension];
-    const sensorType = pick(SENSORS_BY_DIMENSION[dimension]);
-    return {
-      uid: `mock-${i.toString().padStart(3, "0")}`,
-      cotType,
-      dimension,
-      sensorType,
-      lat: randInRange(south, north),
-      lon: randInRange(west, east),
-      vLat: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
-      vLon: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
-      health: randInRange(0.55, 0.95),
-      vHealth: randInRange(-HEALTH_STEP, HEALTH_STEP),
-    };
-  });
+  const tracks: MockTrack[] = [];
+  let i = 0;
+  for (const { category, count } of TRACK_MIX) {
+    for (let k = 0; k < count; k++, i++) {
+      const cotType = pick(COT_BY_CATEGORY[category]);
+      const dimension = DIMENSION_BY_CATEGORY[category];
+      const mult = VELOCITY_MULT[category];
+      const sensorType = pick(SENSORS_BY_DIMENSION[dimension]);
+      tracks.push({
+        uid: `mock-${i.toString().padStart(3, "0")}`,
+        category,
+        cotType,
+        dimension,
+        sensorType,
+        lat: randInRange(south, north),
+        lon: randInRange(west, east),
+        vLat: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
+        vLon: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
+        health: randInRange(0.55, 0.95),
+        vHealth: randInRange(
+          -HEALTH_STEP_BY_CATEGORY[category],
+          HEALTH_STEP_BY_CATEGORY[category],
+        ),
+        delayed: false,
+      });
+    }
+  }
+  return tracks;
 };
 
 export const stepTrack = (track: MockTrack): MockTrack => {
   const { west, east, south, north } = PRESET_BBOX;
-  let { lat, lon, vLat, vLon, health, vHealth } = track;
+  let { lat, lon, vLat, vLon, health, vHealth, delayed } = track;
+  const step = HEALTH_STEP_BY_CATEGORY[track.category];
 
-  lat += vLat;
-  lon += vLon;
-  if (lat < south || lat > north) vLat = -vLat;
-  if (lon < west || lon > east) vLon = -vLon;
+  if (track.category !== "sensor") {
+    lat += vLat;
+    lon += vLon;
+    if (lat < south || lat > north) vLat = -vLat;
+    if (lon < west || lon > east) vLon = -vLon;
+  }
 
-  vHealth += randInRange(-HEALTH_STEP * 0.4, HEALTH_STEP * 0.4);
-  vHealth = clamp(vHealth, -HEALTH_STEP, HEALTH_STEP);
+  vHealth += randInRange(-step * 0.4, step * 0.4);
+  vHealth = clamp(vHealth, -step, step);
   health = clamp(health + vHealth, HEALTH_MIN, HEALTH_MAX);
   if (health === HEALTH_MIN || health === HEALTH_MAX) vHealth = -vHealth * 0.5;
 
-  return { ...track, lat, lon, vLat, vLon, health, vHealth };
+  if (delayed) {
+    if (Math.random() < DELAY_EXIT_PROB) delayed = false;
+  } else if (Math.random() < DELAY_ENTER_PROB) {
+    delayed = true;
+  }
+
+  return { ...track, lat, lon, vLat, vLon, health, vHealth, delayed };
 };
 
 export const emitFromTrack = (track: MockTrack): CotEvent => {
   const now = Date.now();
-  const ce = lerp(120, 4, track.health);
-  const le = lerp(160, 4, track.health);
-  const staleOffsetMs = lerp(-200_000, 120_000, track.health);
+  const ce = lerp(180, 2, track.health);
+  const le = lerp(300, 2, track.health);
+  const staleAtMs = track.delayed
+    ? now - randInRange(DELAY_BACK_S_MIN, DELAY_BACK_S_MAX) * 1000
+    : now + 60_000;
 
   return enrichCot({
     uid: track.uid,
@@ -129,12 +151,12 @@ export const emitFromTrack = (track: MockTrack): CotEvent => {
     sensorType: track.sensorType,
     time: new Date(now).toISOString(),
     start: new Date(now).toISOString(),
-    stale: new Date(now + staleOffsetMs).toISOString(),
+    staleAt: new Date(staleAtMs).toISOString(),
     lat: track.lat,
     lon: track.lon,
-    hae: lerp(5, 150, track.health),
+    hae: lerp(5, 80, track.health),
     ce,
     le,
-    remarks: `${pick(REMARK_FRAGMENTS)} ${track.uid}`,
+    remarks: `${pick(REMARK_FRAGMENTS[track.category])} ${track.uid}`,
   });
 };

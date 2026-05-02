@@ -1,15 +1,4 @@
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import {
-  GiBattleship,
-  GiBullseye,
-  GiBrodieHelmet,
-  GiJetFighter,
-  GiSatelliteCommunication,
-  GiSubmarine,
-  GiTank,
-} from "react-icons/gi";
-import type { IconType } from "react-icons";
+import ms from "milsymbol";
 import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
 
 export type IconDef = {
@@ -21,38 +10,48 @@ export type IconDef = {
 };
 
 const SIZE = 64;
-const ICON_FILL = "#e9d9a8";
-const ICON_HALO = "#040404";
+const BADGE_SIZE = 28;
+const SYMBOL_INSET = 3;
 
-const DIMENSION_ICON: Record<Dimension, IconType> = {
-  air: GiJetFighter,
-  ground: GiTank,
-  sea_surface: GiBattleship,
-  sea_subsurface: GiSubmarine,
-  space: GiSatelliteCommunication,
-  sof: GiBrodieHelmet,
-  other: GiBullseye,
+// MIL-STD-2525C SIDC per dimension. Affiliation is hard-coded to F
+// (Friend) because the app filters to friendly-only tracks; if that
+// constraint relaxes, derive position 2 from event.affiliation.
+//
+// Position 3 is the battle dimension code; positions 5-10 are the
+// function ID. milsymbol pads short SIDCs to 15 chars internally.
+const SIDC_BY_DIMENSION: Record<Dimension, string> = {
+  air: "SFAPMF----",      // Air, military fixed wing
+  ground: "SFGPU-----",   // Ground unit, generic
+  sea_surface: "SFSPC-----",   // Sea surface combatant
+  sea_subsurface: "SFUPS-----", // Sub-surface, submarine
+  space: "SFPPS-----",    // Space track
+  sof: "SFFPU-----",      // Special operations unit
+  sensor: "SFGPESR---",   // Ground equipment, sensor, radar
+  other: "SFGPU-----",    // Fallback to generic ground unit
 };
 
-const dimensionInner = (() => {
-  const cache: Partial<Record<Dimension, string>> = {};
-  return (dim: Dimension): string => {
-    const hit = cache[dim];
-    if (hit) return hit;
-    const fullSvg = renderToStaticMarkup(
-      createElement(DIMENSION_ICON[dim], { size: 64 }),
-    );
-    const inner = fullSvg
-      .replace(/^<svg[^>]*>/, "")
-      .replace(/<\/svg>$/, "");
-    cache[dim] = inner;
-    return inner;
-  };
-})();
+type SymbolGeom = { inner: string; viewBox: string };
 
-const BADGE_SIZE = 28;
+const SYMBOL_CACHE = new Map<string, SymbolGeom>();
 
-const renderBadge = (status: LinkStatus, recovery: boolean): string => {
+const buildSymbolGeom = (sidc: string): SymbolGeom => {
+  const hit = SYMBOL_CACHE.get(sidc);
+  if (hit) return hit;
+  const sym = new ms.Symbol(sidc, {
+    size: 60,
+    outlineWidth: 4,
+    outlineColor: "#0a0a0a",
+  });
+  const svg = sym.asSVG();
+  const vbMatch = svg.match(/viewBox="([^"]+)"/);
+  const viewBox = vbMatch ? vbMatch[1]! : "0 0 100 100";
+  const inner = svg.replace(/^<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+  const geom = { inner, viewBox };
+  SYMBOL_CACHE.set(sidc, geom);
+  return geom;
+};
+
+const renderStatusBadge = (status: LinkStatus, recovery: boolean): string => {
   if (status === "healthy" && !recovery) return "";
 
   const x = 36;
@@ -70,28 +69,45 @@ const renderBadge = (status: LinkStatus, recovery: boolean): string => {
     return `<g><polygon points="${cx},${y + 1} ${x + s - 1},${y + s - 1} ${x + 1},${y + s - 1}" fill="${fill}" stroke="#0a0a0a" stroke-width="2" stroke-linejoin="round"/><text x="${cx}" y="${y + s - 5}" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" font-weight="900" fill="#0a0a0a">!</text></g>`;
   }
 
-  if (status === "stale") {
-    return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1.5}" fill="#ff8c42" stroke="#0a0a0a" stroke-width="2"/><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 7}" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/><line x1="${cx}" y1="${cy}" x2="${cx + 7}" y2="${cy}" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/></g>`;
-  }
-
   return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1.5}" fill="#888" stroke="#0a0a0a" stroke-width="2"/><line x1="${cx - 6}" y1="${cy - 6}" x2="${cx + 6}" y2="${cy + 6}" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="${cx + 6}" y1="${cy - 6}" x2="${cx - 6}" y2="${cy + 6}" stroke="#fff" stroke-width="3" stroke-linecap="round"/></g>`;
+};
+
+const renderStaleBadge = (stale: boolean): string => {
+  if (!stale) return "";
+  const x = 36;
+  const y = SIZE - BADGE_SIZE;
+  const s = BADGE_SIZE;
+  const cx = x + s / 2;
+  const cy = y + s / 2;
+  return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1.5}" fill="#ff8c42" stroke="#0a0a0a" stroke-width="2"/><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 7}" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/><line x1="${cx}" y1="${cy}" x2="${cx + 7}" y2="${cy}" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/></g>`;
 };
 
 const buildSvg = (
   dimension: Dimension,
   status: LinkStatus,
   recovery: boolean,
+  stale: boolean,
   inline: boolean,
 ): string => {
-  const inner = dimensionInner(dimension);
-  const badge = renderBadge(status, recovery);
+  const sidc = SIDC_BY_DIMENSION[dimension];
+  const { inner, viewBox } = buildSymbolGeom(sidc);
+  const statusBadge = renderStatusBadge(status, recovery);
+  const staleBadge = renderStaleBadge(stale);
   const dims = inline
     ? `width="100%" height="100%"`
     : `width="${SIZE}" height="${SIZE}"`;
-  const transform = `translate(5 5) scale(0.105)`;
-  const halo = `<g stroke="${ICON_HALO}" stroke-width="32" stroke-linejoin="round" stroke-linecap="round" fill="${ICON_HALO}" opacity="0.92">${inner}</g>`;
-  const body = `<g fill="${ICON_FILL}">${inner}</g>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" ${dims} viewBox="0 0 ${SIZE} ${SIZE}" preserveAspectRatio="xMidYMid meet"><g transform="${transform}" fill-rule="evenodd">${halo}${body}</g>${badge}</svg>`;
+  // Nested SVG scales the milsymbol output (which has its own
+  // arbitrary viewBox per SIDC) into a square cell, leaving the
+  // outer-canvas corners free for our status / stale badges.
+  const symbolBlock =
+    `<svg x="${SYMBOL_INSET}" y="${SYMBOL_INSET}" ` +
+    `width="${SIZE - SYMBOL_INSET * 2}" height="${SIZE - SYMBOL_INSET * 2}" ` +
+    `viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" ${dims} ` +
+    `viewBox="0 0 ${SIZE} ${SIZE}" preserveAspectRatio="xMidYMid meet">` +
+    `${symbolBlock}${statusBadge}${staleBadge}</svg>`
+  );
 };
 
 const URL_CACHE = new Map<string, IconDef>();
@@ -100,10 +116,11 @@ export const iconFor = (
   event: CotEvent & { recentlyAffected?: boolean },
 ): IconDef => {
   const recovery = !!event.recentlyAffected;
-  const key = `${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}`;
+  const stale = !!event.stale;
+  const key = `${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}:${stale ? "late" : "ontime"}`;
   const hit = URL_CACHE.get(key);
   if (hit) return hit;
-  const svg = buildSvg(event.dimension, event.status, recovery, false);
+  const svg = buildSvg(event.dimension, event.status, recovery, stale, false);
   const def: IconDef = {
     url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
     width: SIZE,
@@ -119,4 +136,5 @@ export const previewSvg = (
   dimension: Dimension,
   status: LinkStatus = "healthy",
   recovery: boolean = false,
-): string => buildSvg(dimension, status, recovery, true);
+  stale: boolean = false,
+): string => buildSvg(dimension, status, recovery, stale, true);

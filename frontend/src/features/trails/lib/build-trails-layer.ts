@@ -1,43 +1,66 @@
 import { PathLayer } from "@deck.gl/layers";
-import { TripsLayer } from "@deck.gl/geo-layers";
 import { PathStyleExtension } from "@deck.gl/extensions";
 import type { Layer } from "@deck.gl/core";
 import { statusColor } from "@/features/links/lib/link-style";
 import type { TrackPath } from "@/lib/track-path";
 
-export const TRAIL_LENGTH_S = 30;
+export const TRAIL_FADE_S = 60;
 
 const DASH_EXTENSION = new PathStyleExtension({
   dash: true,
   highPrecisionDash: true,
 });
 
-// One color per vertex so trail segments keep the status they had
-// at the time the segment was recorded, not the track's current
-// status. (Path/TripsLayer interpolates colors between vertices.)
+const fadeFactor = (age: number): number =>
+  Math.max(0, Math.min(1, 1 - age / TRAIL_FADE_S));
+
 const perVertexColor = (
   d: TrackPath,
-  alpha: number,
+  baseAlpha: number,
+  now: number,
 ): [number, number, number, number][] => {
-  if (d.statuses.length !== d.path.length) {
-    const [r, g, b] = statusColor(d.latest.status);
-    return d.path.map(() => [r, g, b, alpha]);
-  }
-  return d.statuses.map((s) => {
-    const [r, g, b] = statusColor(s);
+  const sameLengths = d.statuses.length === d.path.length;
+  return d.path.map((_, i) => {
+    const status = sameLengths ? d.statuses[i]! : d.latest.status;
+    const [r, g, b] = statusColor(status);
+    const ts = d.timestamps[i] ?? now;
+    const alpha = Math.round(baseAlpha * fadeFactor(now - ts));
     return [r, g, b, alpha];
   });
 };
 
+const lastSegment = (d: TrackPath): [number, number][] => {
+  const n = d.path.length;
+  if (n < 2) return [];
+  return [d.path[n - 2]!, d.path[n - 1]!];
+};
+
+const headColor = (
+  d: TrackPath,
+  now: number,
+): [number, number, number, number] => {
+  const [r, g, b] = statusColor(d.latest.status);
+  const lastTs = d.timestamps[d.timestamps.length - 1] ?? now;
+  const alpha = Math.round(255 * fadeFactor(now - lastTs));
+  return [r, g, b, alpha];
+};
+
+// Quantize the fade clock to 500ms steps so deck.gl only re-uploads
+// the (potentially large) per-vertex color buffer ~2x/sec instead of
+// once per animation frame. Over a 60s fade window the quantization
+// is invisible (<1% alpha step), and the GPU work drops ~15x.
+const FADE_QUANT_S = 0.5;
+
 export const buildTrailsLayers = (
   paths: TrackPath[],
-  renderTime: number,
+  now: number,
 ): Layer[] => {
+  const fadeNow = Math.floor(now / FADE_QUANT_S) * FADE_QUANT_S;
   const dashedHistoryProps = {
     id: "link-trail-history",
     data: paths,
     getPath: (d: TrackPath) => d.path,
-    getColor: (d: TrackPath) => perVertexColor(d, 140),
+    getColor: (d: TrackPath) => perVertexColor(d, 140, fadeNow),
     widthUnits: "pixels" as const,
     getWidth: 2,
     widthMinPixels: 1.5,
@@ -47,28 +70,26 @@ export const buildTrailsLayers = (
     extensions: [DASH_EXTENSION],
     getDashArray: [8, 5] as [number, number],
     dashJustified: false,
+    updateTriggers: {
+      getColor: fadeNow,
+    },
   };
 
-  const fadingHead = new TripsLayer<TrackPath>(
-    {
-      id: "link-trail-head",
-      data: paths,
-      getPath: (d: TrackPath) => d.path,
-      getTimestamps: (d: TrackPath) => d.timestamps,
-      getColor: ((d: TrackPath) => perVertexColor(d, 255)) as never,
-      opacity: 0.95,
-      widthUnits: "pixels",
-      getWidth: 5,
-      widthMinPixels: 3,
-      widthMaxPixels: 7,
-      rounded: true,
-      capRounded: true,
-      jointRounded: true,
-      fadeTrail: true,
-      trailLength: TRAIL_LENGTH_S,
-      currentTime: renderTime,
-    } as unknown as ConstructorParameters<typeof TripsLayer<TrackPath>>[0],
-  );
+  const solidHeadProps = {
+    id: "link-trail-head",
+    data: paths,
+    getPath: lastSegment,
+    getColor: (d: TrackPath) => headColor(d, fadeNow),
+    widthUnits: "pixels" as const,
+    getWidth: 5,
+    widthMinPixels: 3,
+    widthMaxPixels: 7,
+    capRounded: true,
+    jointRounded: true,
+    updateTriggers: {
+      getColor: fadeNow,
+    },
+  };
 
   const dashedHistory = new PathLayer<TrackPath>(
     dashedHistoryProps as unknown as ConstructorParameters<
@@ -76,5 +97,7 @@ export const buildTrailsLayers = (
     >[0],
   );
 
-  return [dashedHistory, fadingHead];
+  const solidHead = new PathLayer<TrackPath>(solidHeadProps);
+
+  return [dashedHistory, solidHead];
 };

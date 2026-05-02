@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import DeckGL from "@deck.gl/react";
+import DeckGL, { type DeckGLRef } from "@deck.gl/react";
 import type { Layer } from "@deck.gl/core";
 import { Map, type MapRef } from "react-map-gl";
 import { env } from "@/config/env";
@@ -13,18 +13,24 @@ import {
   setBuildingVisibility,
 } from "../lib/map-style";
 
+type PickedTrack = { uid: string; callsign?: string };
+
 type MapViewProps = {
   layers: Layer[];
+  onTrackContext?: (
+    info: { x: number; y: number; track: PickedTrack } | null,
+  ) => void;
 };
 
 type ViewState = typeof PRESET_VIEW & { padding?: Record<string, number> };
 
-export const MapView = ({ layers }: MapViewProps) => {
+export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
   const viewState = useViewStateStore((s) => s.viewState);
   const setViewState = useViewStateStore((s) => s.set);
   const resetView = useViewStateStore((s) => s.reset);
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<MapRef | null>(null);
+  const deckRef = useRef<DeckGLRef | null>(null);
   const buildingsVisible = useLayersStore((s) => s.visible.buildings);
 
   useEffect(() => {
@@ -82,34 +88,71 @@ export const MapView = ({ layers }: MapViewProps) => {
     captureBbox();
   }, [captureBbox]);
 
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!onTrackContext) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const deck = deckRef.current;
+      if (!deck) {
+        onTrackContext(null);
+        return;
+      }
+      const picked = deck.pickObject({
+        x,
+        y,
+        radius: 6,
+        layerIds: ["link-icon"],
+      });
+      const obj = picked?.object as
+        | { uid?: string; latest?: { callsign?: string } }
+        | undefined;
+      if (!obj || !obj.uid) {
+        onTrackContext(null);
+        return;
+      }
+      onTrackContext({
+        x: event.clientX,
+        y: event.clientY,
+        track: { uid: obj.uid, callsign: obj.latest?.callsign },
+      });
+    },
+    [onTrackContext],
+  );
+
   if (!env.mapboxToken) return <MissingTokenNotice />;
 
   return (
-    <DeckGL
-      viewState={viewState}
-      controller
-      layers={layers}
-      onViewStateChange={({ viewState: next }) => {
-        const v = next as ViewState;
-        setViewState({
-          longitude: v.longitude,
-          latitude: v.latitude,
-          zoom: v.zoom,
-          pitch: v.pitch,
-          bearing: v.bearing,
-        });
-      }}
-    >
-      <Map
-        ref={mapRef}
-        mapboxAccessToken={env.mapboxToken}
-        mapStyle={env.mapStyleUrl}
-        onLoad={handleLoad}
-        onMoveEnd={captureBbox}
-        reuseMaps
-        attributionControl={false}
-      />
-    </DeckGL>
+    <div className="h-full w-full" onContextMenu={handleContextMenu}>
+      <DeckGL
+        ref={deckRef}
+        viewState={viewState}
+        controller
+        layers={layers}
+        onViewStateChange={({ viewState: next }) => {
+          const v = next as ViewState;
+          setViewState({
+            longitude: v.longitude,
+            latitude: v.latitude,
+            zoom: v.zoom,
+            pitch: v.pitch,
+            bearing: v.bearing,
+          });
+        }}
+      >
+        <Map
+          ref={mapRef}
+          mapboxAccessToken={env.mapboxToken}
+          mapStyle={env.mapStyleUrl}
+          onLoad={handleLoad}
+          onMoveEnd={captureBbox}
+          reuseMaps
+          attributionControl={false}
+        />
+      </DeckGL>
+    </div>
   );
 };
 

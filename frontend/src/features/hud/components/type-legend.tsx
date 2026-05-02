@@ -9,13 +9,13 @@ type LegendItem = {
 };
 
 const ITEMS: LegendItem[] = [
+  { dimension: "sensor", label: "Sensor", hint: "fixed array / radar" },
   { dimension: "ground", label: "Ground", hint: "armor / vehicle" },
-  { dimension: "air", label: "Air", hint: "rotor / fixed / uav" },
+  { dimension: "air", label: "Air", hint: "fixed / rotor / uav" },
   { dimension: "sea_surface", label: "Surface", hint: "warship / vessel" },
   { dimension: "sea_subsurface", label: "Subsurface", hint: "submersible" },
   { dimension: "space", label: "Space", hint: "satellite asset" },
   { dimension: "sof", label: "SOF", hint: "special ops" },
-  { dimension: "other", label: "Other", hint: "asset" },
 ];
 
 export const TypeLegend = () => (

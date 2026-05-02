@@ -7,6 +7,7 @@ export const SENSORS_BY_DIMENSION: Record<Dimension, SensorType[]> = {
   sea_subsurface: ["sonar", "acoustic"],
   space: ["eo_ir", "sigint"],
   sof: ["eo_ir", "acoustic", "lidar"],
+  sensor: ["radar", "eo_ir", "sigint", "acoustic", "seismic", "lidar"],
   other: ["radar", "eo_ir"],
 };
 

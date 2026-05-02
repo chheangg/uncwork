@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { CotEvent, LinkStatus } from "@/types/cot";
 import type { TrackPath } from "@/lib/track-path";
+import { TRAIL_FADE_S } from "../lib/build-trails-layer";
 
 const POSITION_EPSILON = 1e-7;
 
@@ -49,6 +50,20 @@ export const useTrackHistory = <E extends CotEvent>(
         existing.statuses.push(e.status);
       }
       existing.latest = e;
+
+      const cutoff = t - TRAIL_FADE_S;
+      let drop = 0;
+      while (
+        existing.timestamps.length - drop > 2 &&
+        (existing.timestamps[drop] ?? t) < cutoff
+      ) {
+        drop++;
+      }
+      if (drop > 0) {
+        existing.path.splice(0, drop);
+        existing.timestamps.splice(0, drop);
+        existing.statuses.splice(0, drop);
+      }
     }
 
     const out: TrackPath<E>[] = [];
