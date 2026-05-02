@@ -53,11 +53,27 @@ export const MapView = ({ layers }: MapViewProps) => {
     if (!map) return;
     const b = map.getBounds();
     if (!b) return;
+    // Mapbox getBounds() returns the on-screen rectangle. With pitch
+    // the visible trapezoid extends beyond that, so pad 15% on each
+    // axis. Also enforce a minimum span so deep zooms still pull a
+    // useful slice from OpenSky.
+    const PAD = 0.25;
+    const MIN_SPAN_DEG = 0.35;
+    const south0 = b.getSouth();
+    const north0 = b.getNorth();
+    const west0 = b.getWest();
+    const east0 = b.getEast();
+    const latSpan = Math.max(north0 - south0, MIN_SPAN_DEG);
+    const lngSpan = Math.max(east0 - west0, MIN_SPAN_DEG);
+    const latCenter = (north0 + south0) / 2;
+    const lngCenter = (east0 + west0) / 2;
+    const halfLat = latSpan * (0.5 + PAD);
+    const halfLng = lngSpan * (0.5 + PAD);
     setBbox({
-      south: b.getSouth(),
-      west: b.getWest(),
-      north: b.getNorth(),
-      east: b.getEast(),
+      south: latCenter - halfLat,
+      north: latCenter + halfLat,
+      west: lngCenter - halfLng,
+      east: lngCenter + halfLng,
     });
   }, [setBbox]);
 

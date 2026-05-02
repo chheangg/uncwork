@@ -6,7 +6,7 @@ import type { AugmentedEvent } from "../hooks/use-affected-augment";
 import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
 
-const TRANSITION_MS = 2400;
+const TRANSITION_MS = 1100;
 
 const ALTITUDE: Record<Dimension, number> = {
   air: 220,

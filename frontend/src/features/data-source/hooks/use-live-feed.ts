@@ -19,8 +19,8 @@ type WireMessage = {
 };
 
 const RECONNECT_DELAY_MS = 1500;
-const PRUNE_INTERVAL_MS = 5_000;
-const STALE_TRACK_MS = 30_000;
+const PRUNE_INTERVAL_MS = 2_000;
+const STALE_TRACK_MS = 8_000;
 
 const num = (v: string | null | undefined): number | undefined => {
   if (v === null || v === undefined) return undefined;

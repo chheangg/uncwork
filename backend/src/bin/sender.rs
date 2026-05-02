@@ -22,7 +22,13 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 const OPENSKY_URL: &str = "https://opensky-network.org/api/states/all";
 const OPENSKY_POLL_SECS: u64 = 10;
 const EMIT_TICK_MS: u64 = 1000;
-const ANCHOR_MAX_AGE_SECS: u64 = 120;
+// If a track hasn't been re-anchored by OpenSky in this many seconds,
+// stop emitting for it -- frontend will prune it shortly. Keeps trails
+// from drifting off into space when an aircraft leaves the bbox.
+const EMIT_SKIP_AFTER_SECS: u64 = 18;
+// Hard drop from in-memory state after this long. Anything beyond this
+// is definitely gone (left airspace / OpenSky lost it).
+const ANCHOR_MAX_AGE_SECS: u64 = 60;
 
 #[derive(Clone, Copy, Deserialize)]
 struct Viewport {
@@ -310,6 +316,10 @@ fn run_sender(
         if now.duration_since(last_tick) >= Duration::from_millis(EMIT_TICK_MS) {
             let dt = now.duration_since(last_tick).as_secs_f64();
             for ac in state.values_mut() {
+                let anchor_age = now.duration_since(ac.last_anchor);
+                if anchor_age >= Duration::from_secs(EMIT_SKIP_AFTER_SECS) {
+                    continue;
+                }
                 ac.extrapolate(dt);
                 ac.last_emit = now;
                 seq += 1;

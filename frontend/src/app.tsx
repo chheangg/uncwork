@@ -56,10 +56,10 @@ export const App = () => {
     [augmentedEvents, currentTime, visible.links],
   );
 
-  // Icon position has a 2.4s transition (build-link-layers.ts);
+  // Icon position has a 1.1s transition (build-link-layers.ts);
   // delay the trail's currentTime by the same so trail head and
   // icon move together instead of the trail leading the icon.
-  const ICON_SYNC_LAG_S = 2.4;
+  const ICON_SYNC_LAG_S = 1.1;
   const trailsLayers = useMemo(
     () =>
       visible.trails
