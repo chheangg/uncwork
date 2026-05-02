@@ -4,17 +4,26 @@ import { SENSORS_BY_DIMENSION } from "@/lib/sensor";
 import type { CotEvent, Dimension, SensorType } from "@/types/cot";
 
 const COT_TYPES = [
+  "a-f-A-W-D",
+  "a-f-A-W-D",
+  "a-f-A-W-D-S",
+  "a-f-A-W-D-S",
+  "a-f-A-W-D-R",
+  "a-f-A-M-H",
+  "a-f-A-M-F",
+  "a-f-G-E-S-R",
+  "a-f-G-E-S-R",
+  "a-f-G-E-S-S",
+  "a-f-G-E-S-O",
+  "a-f-G-U-S",
+  "a-f-G-U-S",
   "a-f-G-U-C",
   "a-f-G-U-C-I",
-  "a-f-A-M-F",
   "a-f-S-X-M",
-  "a-h-G-U-C",
-  "a-h-A-M-F",
-  "a-h-G-U-C-I",
-  "a-n-G-U-C",
-  "a-u-A-M-F",
-  "a-p-G",
-  "a-s-G-U-C",
+  "a-f-S-X-S",
+  "a-f-U-S-S",
+  "a-f-P-S",
+  "a-f-F-T",
 ];
 
 const REMARK_FRAGMENTS = [
@@ -26,6 +35,8 @@ const REMARK_FRAGMENTS = [
   "checkpoint",
   "drone",
   "asset",
+  "sensor",
+  "buoy",
 ];
 
 const POSITION_VEL = 0.001;

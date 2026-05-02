@@ -37,17 +37,28 @@ export const App = () => {
 
   const heatmapActive = visible.heatmap && zoomedOut;
 
-  const staticLayers = useMemo<Layer[]>(() => {
-    const result: Layer[] = [];
-    if (heatmapActive) result.push(buildHeatmapLayer(events));
-    if (visible.links) result.push(...buildLinkLayers(events));
-    return result;
-  }, [events, heatmapActive, visible.links]);
+  const heatmapLayer = useMemo(
+    () => (heatmapActive ? buildHeatmapLayer(events) : null),
+    [events, heatmapActive],
+  );
+
+  const linkLayers = useMemo(
+    () => (visible.links ? buildLinkLayers(events, currentTime) : []),
+    [events, currentTime, visible.links],
+  );
+
+  const trailsLayer = useMemo(
+    () => (visible.trails ? buildTrailsLayer(trackPaths, currentTime) : null),
+    [trackPaths, currentTime, visible.trails],
+  );
 
   const layers = useMemo<Layer[]>(() => {
-    if (!visible.trails) return staticLayers;
-    return [buildTrailsLayer(trackPaths, currentTime), ...staticLayers];
-  }, [staticLayers, trackPaths, currentTime, visible.trails]);
+    const result: Layer[] = [];
+    if (trailsLayer) result.push(trailsLayer);
+    if (heatmapLayer) result.push(heatmapLayer);
+    result.push(...linkLayers);
+    return result;
+  }, [trailsLayer, heatmapLayer, linkLayers]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
   const affiliationCounts = useMemo(

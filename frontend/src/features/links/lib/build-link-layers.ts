@@ -1,6 +1,6 @@
 import { IconLayer, LineLayer, TextLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
-import type { CotEvent, Dimension } from "@/types/cot";
+import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
 import { sensorLabel } from "@/lib/sensor";
 import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
@@ -29,7 +29,38 @@ const groundPosition = (e: CotEvent): [number, number, number] => [
   0,
 ];
 
-export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
+const hash = (s: string): number => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+const statusAlpha = (
+  status: LinkStatus,
+  confInt: number,
+  uid: string,
+  t: number,
+): number => {
+  const base = 0.45 + confInt * 0.55;
+  const phase = t * 4 + (hash(uid) % 31);
+  switch (status) {
+    case "healthy":
+      return base;
+    case "degraded":
+      return base * (0.55 + 0.45 * Math.sin(phase));
+    case "critical":
+      return base * (0.4 + 0.5 * Math.sin(phase * 1.4));
+    case "stale":
+      return base * 0.55;
+    case "offline":
+      return 0.3;
+  }
+};
+
+export const buildLinkLayers = (
+  events: CotEvent[],
+  currentTime: number,
+): Layer[] => [
   new LineLayer<CotEvent>({
     id: "link-pole",
     data: events,
@@ -59,16 +90,19 @@ export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
       255,
       255,
       255,
-      Math.round(255 * (0.45 + e.confInt * 0.55)),
+      Math.round(255 * statusAlpha(e.status, e.confInt, e.uid, currentTime)),
     ],
     sizeMinPixels: 28,
     sizeMaxPixels: 64,
     billboard: true,
     parameters: { depthCompare: "always" },
+    updateTriggers: {
+      getIcon: events.map((e) => e.status).join(","),
+      getColor: currentTime,
+    },
     transitions: {
       getPosition: { duration: TRANSITION_MS, type: "interpolation" },
       getSize: { duration: TRANSITION_MS, type: "interpolation" },
-      getColor: { duration: TRANSITION_MS, type: "interpolation" },
     },
   }),
   new TextLayer<CotEvent>({

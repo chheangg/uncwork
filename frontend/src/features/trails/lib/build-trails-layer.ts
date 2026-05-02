@@ -11,31 +11,24 @@ const DASH_EXTENSION = new PathStyleExtension({
   highPrecisionDash: true,
 });
 
-type DashProps = {
-  getDashArray: [number, number];
-  dashJustified: boolean;
-};
-
 export const buildTrailsLayer = (
   paths: TrackPath[],
   currentTime: number,
 ): Layer => {
-  const dashProps: DashProps = {
-    getDashArray: [4, 3],
-    dashJustified: true,
-  };
-  return new TripsLayer<TrackPath>({
+  const props = {
     id: "link-trails",
     data: paths,
-    getPath: (d) => d.path,
-    getTimestamps: (d) => d.timestamps,
-    getColor: (d) => {
+    getPath: (d: TrackPath) => d.path,
+    getTimestamps: (d: TrackPath) => d.timestamps,
+    getColor: (d: TrackPath) => {
       const [r, g, b] = statusColor(d.status);
       return [r, g, b];
     },
     opacity: 0.95,
-    widthMinPixels: 5,
-    widthMaxPixels: 9,
+    widthUnits: "pixels" as const,
+    getWidth: 4,
+    widthMinPixels: 3,
+    widthMaxPixels: 7,
     rounded: true,
     fadeTrail: true,
     trailLength: TRAIL_LENGTH_S,
@@ -43,6 +36,10 @@ export const buildTrailsLayer = (
     capRounded: true,
     jointRounded: true,
     extensions: [DASH_EXTENSION],
-    ...(dashProps as unknown as Record<string, never>),
-  });
+    getDashArray: [10, 6] as [number, number],
+    dashJustified: false,
+  };
+  return new TripsLayer<TrackPath>(
+    props as unknown as ConstructorParameters<typeof TripsLayer<TrackPath>>[0],
+  );
 };
