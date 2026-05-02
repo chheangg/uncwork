@@ -1,9 +1,10 @@
-import type { CotEvent } from "@/types/cot";
+import type { CotEvent, LinkStatus } from "@/types/cot";
 
 export type TrackPath<E extends CotEvent = CotEvent> = {
   uid: string;
   path: [number, number][];
   timestamps: number[];
+  statuses: LinkStatus[];
   latest: E;
 };
 

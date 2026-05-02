@@ -19,8 +19,6 @@ type WireMessage = {
 };
 
 const RECONNECT_DELAY_MS = 1500;
-const PRUNE_INTERVAL_MS = 2_000;
-const STALE_TRACK_MS = 8_000;
 const UPSERT_FLUSH_MS = 33;
 
 const num = (v: string | null | undefined): number | undefined => {
@@ -77,10 +75,8 @@ export const useLiveFeed = () => {
   const source = useDataSourceStore((s) => s.source);
   const upsertMany = useEventStore((s) => s.upsertMany);
   const clear = useEventStore((s) => s.clear);
-  const pruneOlderThan = useEventStore((s) => s.pruneOlderThan);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
-  const pruneRef = useRef<number | null>(null);
   const flushRef = useRef<number | null>(null);
   const pendingRef = useRef<ReturnType<typeof toCotEvent>[]>([]);
   const cancelRef = useRef(false);
@@ -104,10 +100,6 @@ export const useLiveFeed = () => {
       if (reconnectRef.current !== null) {
         window.clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
-      }
-      if (pruneRef.current !== null) {
-        window.clearInterval(pruneRef.current);
-        pruneRef.current = null;
       }
       if (flushRef.current !== null) {
         window.clearTimeout(flushRef.current);
@@ -156,12 +148,8 @@ export const useLiveFeed = () => {
       });
     };
 
-    pruneRef.current = window.setInterval(() => {
-      pruneOlderThan(Date.now() - STALE_TRACK_MS);
-    }, PRUNE_INTERVAL_MS);
-
     connect();
 
     return teardown;
-  }, [source, upsertMany, clear, pruneOlderThan]);
+  }, [source, upsertMany, clear]);
 };

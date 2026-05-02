@@ -1,45 +1,32 @@
-import { HeatmapLayer } from "@deck.gl/aggregation-layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
 import { statusColor } from "@/features/links/lib/link-style";
 
-// Use the exact same RGBs and alpha as the status badge background
-// (link-style.ts statusColor() at the alpha set in build-link-layers
-// label background = 220) so a green hot-spot on the heatmap and the
-// healthy status badge are pixel-identical fills.
+// One status-colored disc per track. RGBA is the exact value
+// returned by statusColor() at alpha 220 -- the same RGBA the link
+// label badge is rendered at -- so the disc under a track and its
+// percentage badge are identical pixels (no gradient, no alpha
+// drift, no auto-normalization).
 const ALPHA = 220;
-const [hr, hg, hb] = statusColor("healthy");
-const [yr, yg, yb] = statusColor("degraded");
-const [or_, og, ob] = statusColor("stale");
-const [cr, cg, cb] = statusColor("critical");
-
-// Hard-stepped gradient: the alpha-0 stop has the healthy RGB so
-// edge pixels fade in green (not toward black). Each color band is
-// followed by a near-duplicate stop so the transition between
-// status zones is sharp -- weight 0.30 reads as healthy, 0.55 as
-// degraded, etc., with minimal in-between gradient mush.
-const COLOR_RAMP: [number, number, number, number][] = [
-  [hr, hg, hb, 0],
-  [hr, hg, hb, ALPHA],
-  [hr, hg, hb, ALPHA],
-  [yr, yg, yb, ALPHA],
-  [yr, yg, yb, ALPHA],
-  [or_, og, ob, ALPHA],
-  [or_, og, ob, ALPHA],
-  [cr, cg, cb, ALPHA],
-];
 
 export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
-  new HeatmapLayer<CotEvent>({
+  new ScatterplotLayer<CotEvent>({
     id: "confidence-heatmap",
     data: events,
-    getPosition: (e) => [e.lon, e.lat],
-    getWeight: (e) => 0.15 + (1 - e.confInt) * 0.85,
-    colorDomain: [0.1, 1],
-    aggregation: "MEAN",
-    colorRange: COLOR_RAMP,
-    radiusPixels: 90,
-    intensity: 1.1,
-    threshold: 0.04,
-    opacity: 1,
+    pickable: false,
+    stroked: false,
+    filled: true,
+    radiusUnits: "pixels",
+    getPosition: (e) => [e.lon, e.lat, 0],
+    getRadius: 90,
+    getFillColor: (e) => {
+      if (e.status === "offline") return [0, 0, 0, 0];
+      const [r, g, b] = statusColor(e.status);
+      return [r, g, b, ALPHA];
+    },
+    updateTriggers: {
+      getFillColor: events.map((e) => e.status).join(","),
+    },
+    parameters: { depthCompare: "always" },
   });
