@@ -10,6 +10,12 @@ use std::time::{Duration, Instant};
 
 const LISTENER_URL: &str = "http://127.0.0.1:3000";
 
+// Fixed ground positions for each sensor unit (~4.6 miles apart, within the 5-mile neighbor radius)
+const UNIT_A_LAT: f64 = 37.8072; // Marin Headlands / Golden Gate
+const UNIT_A_LON: f64 = -122.4325;
+const UNIT_B_LAT: f64 = 37.8590; // Sausalito
+const UNIT_B_LON: f64 = -122.4852;
+
 // Fallback bbox for the very first fetch before the listener tells us
 // the frontend's viewport. Roughly the SF bay area.
 const DEFAULT_VIEWPORT: Viewport = Viewport {
@@ -142,7 +148,7 @@ impl ExtrapState {
         self.lon += dx_m / mpd_lon;
     }
 
-    fn to_cot(&self, seq: u64, unit: &str) -> String {
+    fn to_cot(&self, seq: u64, unit: &str, sensor_lat: f64, sensor_lon: f64) -> String {
         let now = Utc::now();
         let stale = now + chrono::Duration::seconds(60);
         let now_str = now.format("%Y-%m-%dT%H:%M:%S%.3fZ");
@@ -161,6 +167,7 @@ impl ExtrapState {
     <detail>
         <contact callsign="{callsign}"/>
         <track course="{course:.1}" speed="{speed:.1}"/>
+        <sensor lat="{sensor_lat}" lon="{sensor_lon}"/>
     </detail>
     <remarks>unit={unit} callsign={callsign} seq={seq}</remarks>
 </event>"#,
@@ -173,6 +180,8 @@ impl ExtrapState {
             callsign = callsign,
             course = course_deg,
             speed = self.velocity_mps,
+            sensor_lat = sensor_lat,
+            sensor_lon = sensor_lon,
             unit = unit,
             seq = seq,
         )
@@ -318,6 +327,8 @@ fn run_sender(
     bind_port: u16,
     rx: mpsc::Receiver<Vec<StateVector>>,
     chaos: ChaosConfig,
+    sensor_lat: f64,
+    sensor_lon: f64,
 ) {
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", bind_port))
         .unwrap_or_else(|e| panic!("[{unit}] failed to bind port {bind_port}: {e}"));
@@ -358,7 +369,7 @@ fn run_sender(
                 ac.extrapolate(dt);
                 ac.last_emit = now;
                 seq += 1;
-                queue.push_back(ac.to_cot(seq, unit));
+                queue.push_back(ac.to_cot(seq, unit, sensor_lat, sensor_lon));
             }
             last_tick = now;
 
@@ -417,8 +428,8 @@ fn main() {
     let (tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
     let (tx_b, rx_b) = mpsc::channel::<Vec<StateVector>>();
 
-    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS));
-    thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS));
+    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON));
+    thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON));
 
     run_fetcher(vec![tx_a, tx_b]);
 }

@@ -11,15 +11,70 @@ use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
+
+// EMA smoothing: ~6-message time constant
+const TRUST_ALPHA: f64 = 0.15;
+const QUALITY_CLEAN: f64 = 0.95;
+const QUALITY_DUPLICATE: f64 = 0.40;
+const QUALITY_OUT_OF_ORDER: f64 = 0.30;
+const QUALITY_DROPPED: f64 = 0.05;
+const QUALITY_CORRUPT: f64 = 0.00;
+// Silence decay: after 20s idle, score falls at 0.97/sec
+const DECAY_THRESHOLD_SECS: f64 = 20.0;
+const DECAY_RATE_PER_SEC: f64 = 0.97;
+// Neighbor influence: senders within this radius share degradation
+const NEIGHBOR_RADIUS_MILES: f64 = 5.0;
+const NEIGHBOR_INFLUENCE: f64 = 0.5;
+
+struct TrustState {
+    score: f64,
+    last_event: Instant,
+}
+
+impl TrustState {
+    fn new() -> Self {
+        Self { score: 1.0, last_event: Instant::now() }
+    }
+
+    fn record(&mut self, quality: f64) {
+        self.score = (TRUST_ALPHA * quality + (1.0 - TRUST_ALPHA) * self.score).clamp(0.0, 1.0);
+        self.last_event = Instant::now();
+    }
+
+    fn decay_if_stale(&mut self) {
+        let elapsed = self.last_event.elapsed().as_secs_f64();
+        if elapsed > DECAY_THRESHOLD_SECS {
+            let secs_past = elapsed - DECAY_THRESHOLD_SECS;
+            self.score = (self.score * DECAY_RATE_PER_SEC.powf(secs_past)).clamp(0.0, 1.0);
+        }
+    }
+
+    fn current(&self) -> f64 {
+        self.score
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct SenderInfo {
     addr: String,
     last_seen: String,
     message_count: u64,
+    sensor_lat: Option<f64>,
+    sensor_lon: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct SenderResponse {
+    addr: String,
+    last_seen: String,
+    message_count: u64,
+    trust_score: f64,
+    sensor_lat: Option<f64>,
+    sensor_lon: Option<f64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -34,6 +89,9 @@ struct CotMessage {
     flight_number: Option<String>,
     remarks: Option<String>,
     source: String,
+    trust_score: f64,
+    sensor_lat: Option<f64>,
+    sensor_lon: Option<f64>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -53,6 +111,7 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 
 struct AppState {
     senders: RwLock<HashMap<String, SenderInfo>>,
+    trust: RwLock<HashMap<String, TrustState>>,
     cot_tx: broadcast::Sender<CotMessage>,
     viewport: RwLock<Viewport>,
 }
@@ -63,6 +122,7 @@ async fn main() -> std::io::Result<()> {
 
     let state = Arc::new(AppState {
         senders: RwLock::new(HashMap::new()),
+        trust: RwLock::new(HashMap::new()),
         cot_tx,
         viewport: RwLock::new(DEFAULT_VIEWPORT),
     });
@@ -71,6 +131,18 @@ async fn main() -> std::io::Result<()> {
     tokio::spawn(async move {
         if let Err(e) = run_udp(udp_state).await {
             eprintln!("UDP listener error: {e}");
+        }
+    });
+
+    let decay_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let mut trust = decay_state.trust.write().await;
+            for t in trust.values_mut() {
+                t.decay_if_stale();
+            }
         }
     });
 
@@ -96,7 +168,8 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
     // Dedup by (uid, time) so retransmitted packets are dropped
     // but legitimate position updates for the same uid pass through.
     let mut seen_frames: HashSet<(String, String)> = HashSet::new();
-    let mut next_expected_seq: u64 = 1;
+    // Per-sender sequence counters (unit_a and unit_b each have independent seqs)
+    let mut next_seq: HashMap<String, u64> = HashMap::new();
 
     loop {
         let (amt, src) = socket.recv_from(&mut buf).await?;
@@ -111,6 +184,8 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                 addr: src_str.clone(),
                 last_seen: String::new(),
                 message_count: 0,
+                sensor_lat: None,
+                sensor_lon: None,
             });
             entry.last_seen = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
             entry.message_count += 1;
@@ -124,6 +199,9 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
 
                 if seen_frames.contains(&frame_key) {
                     println!("DUPLICATE suppressed: {}\n", uid);
+                    state.trust.write().await
+                        .entry(src_str.clone()).or_insert_with(TrustState::new)
+                        .record(QUALITY_DUPLICATE);
                     continue;
                 }
                 seen_frames.insert(frame_key);
@@ -131,27 +209,55 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     seen_frames.clear();
                 }
 
-                // Sequence number is embedded in remarks ("... seq=N")
-                if let Some(seq) = data.remarks.as_deref().and_then(parse_seq_from_remarks) {
-                    if seq < next_expected_seq {
-                        println!(
-                            "OUT-OF-ORDER: seq={} arrived after seq={}",
-                            seq,
-                            next_expected_seq - 1
-                        );
-                    } else if seq > next_expected_seq {
-                        let dropped = seq - next_expected_seq;
-                        println!(
-                            "GAP detected: seq={} (missed {} message{})",
-                            seq,
-                            dropped,
-                            if dropped == 1 { "" } else { "s" }
-                        );
-                        next_expected_seq = seq + 1;
-                    } else {
-                        next_expected_seq = seq + 1;
+                // Persist sensor position into the sender registry
+                if data.sensor_lat.is_some() || data.sensor_lon.is_some() {
+                    let mut senders = state.senders.write().await;
+                    if let Some(info) = senders.get_mut(&src_str) {
+                        info.sensor_lat = data.sensor_lat;
+                        info.sensor_lon = data.sensor_lon;
                     }
                 }
+
+                // Sequence tracking + trust update
+                {
+                    let mut trust = state.trust.write().await;
+                    let t = trust.entry(src_str.clone()).or_insert_with(TrustState::new);
+                    let expected = next_seq.entry(src_str.clone()).or_insert(1);
+
+                    match data.remarks.as_deref().and_then(parse_seq_from_remarks) {
+                        Some(seq) if seq < *expected => {
+                            println!("OUT-OF-ORDER: seq={} arrived after seq={}", seq, *expected - 1);
+                            t.record(QUALITY_OUT_OF_ORDER);
+                        }
+                        Some(seq) if seq > *expected => {
+                            let dropped = seq - *expected;
+                            println!(
+                                "GAP detected: seq={} (missed {} message{})",
+                                seq, dropped, if dropped == 1 { "" } else { "s" }
+                            );
+                            for _ in 0..dropped.min(5) {
+                                t.record(QUALITY_DROPPED);
+                            }
+                            t.record(QUALITY_CLEAN);
+                            *expected = seq + 1;
+                        }
+                        Some(seq) => {
+                            t.record(QUALITY_CLEAN);
+                            *expected = seq + 1;
+                        }
+                        None => {
+                            t.record(QUALITY_CLEAN);
+                        }
+                    }
+                }
+
+                // Compute effective trust: raw EMA pulled down by nearby degraded senders
+                let effective_score = {
+                    let senders = state.senders.read().await;
+                    let trust = state.trust.read().await;
+                    let raw = trust.get(&src_str).map(|t| t.current()).unwrap_or(1.0);
+                    compute_effective_trust(&src_str, raw, &senders, &trust)
+                };
 
                 let cot_msg = CotMessage {
                     uid: data.uid,
@@ -164,19 +270,42 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     flight_number: data.callsign,
                     remarks: data.remarks,
                     source: src_str,
+                    trust_score: effective_score,
+                    sensor_lat: data.sensor_lat,
+                    sensor_lon: data.sensor_lon,
                 };
 
                 print_cot(&cot_msg);
                 let _ = state.cot_tx.send(cot_msg);
             }
-            None => println!("Failed to parse CoT message\n"),
+            None => {
+                println!("Failed to parse CoT message (corrupt)\n");
+                state.trust.write().await
+                    .entry(src_str).or_insert_with(TrustState::new)
+                    .record(QUALITY_CORRUPT);
+            }
         }
     }
 }
 
-async fn get_senders(State(state): State<Arc<AppState>>) -> Json<Vec<SenderInfo>> {
+async fn get_senders(State(state): State<Arc<AppState>>) -> Json<Vec<SenderResponse>> {
     let senders = state.senders.read().await;
-    Json(senders.values().cloned().collect())
+    let trust = state.trust.read().await;
+
+    Json(
+        senders.values().map(|info| {
+            let raw = trust.get(&info.addr).map(|t| t.current()).unwrap_or(1.0);
+            let effective = compute_effective_trust(&info.addr, raw, &senders, &trust);
+            SenderResponse {
+                addr: info.addr.clone(),
+                last_seen: info.last_seen.clone(),
+                message_count: info.message_count,
+                trust_score: effective,
+                sensor_lat: info.sensor_lat,
+                sensor_lon: info.sensor_lon,
+            }
+        }).collect()
+    )
 }
 
 async fn get_viewport(State(state): State<Arc<AppState>>) -> Json<Viewport> {
@@ -221,6 +350,54 @@ async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>) {
     }
 }
 
+// Applies a one-way neighbor drag: if any sender within NEIGHBOR_RADIUS_MILES has a lower
+// raw trust score, pull the effective score toward that worst neighbor.
+// Scores can only go down — a better neighbor has no effect.
+fn compute_effective_trust(
+    own_addr: &str,
+    raw_score: f64,
+    senders: &HashMap<String, SenderInfo>,
+    trust: &HashMap<String, TrustState>,
+) -> f64 {
+    let own_info = match senders.get(own_addr) {
+        Some(i) => i,
+        None => return raw_score,
+    };
+    let (own_lat, own_lon) = match (own_info.sensor_lat, own_info.sensor_lon) {
+        (Some(lat), Some(lon)) => (lat, lon),
+        _ => return raw_score,
+    };
+
+    let worst_nearby = trust
+        .iter()
+        .filter(|(addr, _)| addr.as_str() != own_addr)
+        .filter_map(|(addr, t)| {
+            let info = senders.get(addr)?;
+            let neighbor_lat = info.sensor_lat?;
+            let neighbor_lon = info.sensor_lon?;
+            let dist = haversine_miles(own_lat, own_lon, neighbor_lat, neighbor_lon);
+            if dist <= NEIGHBOR_RADIUS_MILES { Some(t.current()) } else { None }
+        })
+        .fold(f64::INFINITY, f64::min);
+
+    if worst_nearby.is_finite() && worst_nearby < raw_score {
+        let dragged = raw_score + NEIGHBOR_INFLUENCE * (worst_nearby - raw_score);
+        dragged.clamp(0.0, raw_score)
+    } else {
+        raw_score
+    }
+}
+
+fn haversine_miles(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const EARTH_RADIUS_MILES: f64 = 3958.8;
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+    let lat1 = lat1.to_radians();
+    let lat2 = lat2.to_radians();
+    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    EARTH_RADIUS_MILES * 2.0 * a.sqrt().asin()
+}
+
 // Extracts "seq=N" from the remarks text produced by the sender.
 fn parse_seq_from_remarks(remarks: &str) -> Option<u64> {
     remarks
@@ -238,6 +415,8 @@ struct CotData {
     lon: Option<String>,
     hae: Option<String>,
     callsign: Option<String>,
+    sensor_lat: Option<f64>,
+    sensor_lon: Option<f64>,
     remarks: Option<String>,
 }
 
@@ -295,6 +474,17 @@ fn parse_cot(xml: &str) -> Option<CotData> {
                             data.callsign = Some(val);
                         }
                     }
+                } else if tag == "sensor" {
+                    for attr in e.attributes().flatten() {
+                        let key = String::from_utf8_lossy(attr.key.as_ref());
+                        let val = attr.unescape_value().unwrap_or_default().to_string();
+
+                        match key.as_ref() {
+                            "lat" => data.sensor_lat = val.parse().ok(),
+                            "lon" => data.sensor_lon = val.parse().ok(),
+                            _ => {}
+                        }
+                    }
                 }
             }
 
@@ -331,6 +521,7 @@ fn parse_cot(xml: &str) -> Option<CotData> {
 fn print_cot(msg: &CotMessage) {
     println!("UID:          {}", msg.uid.as_deref().unwrap_or("N/A"));
     println!("Flight:       {}", msg.flight_number.as_deref().unwrap_or("N/A"));
+    println!("Trust:        {:.3}", msg.trust_score);
     println!("Time:         {}", msg.time.as_deref().unwrap_or("N/A"));
     println!("Stale:        {}", msg.stale.as_deref().unwrap_or("N/A"));
     println!(
