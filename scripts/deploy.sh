@@ -21,6 +21,7 @@ dim()   { printf "\033[2m%s\033[0m\n" "$*"; }
 require() {
   command -v "$1" >/dev/null 2>&1 || { red "missing dep: $1"; exit 1; }
 }
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 require cargo
 require pnpm
 require ngrok
@@ -113,11 +114,11 @@ curl -sf http://localhost:4040/api/tunnels >/dev/null 2>&1 || {
 
 API_URL=""
 WEB_URL=""
-for i in {1..30}; do
-  TUNNELS=$(curl -s http://localhost:4040/api/tunnels)
-  API_URL=$(echo "$TUNNELS" | jq -r '.tunnels[] | select(.name=="api") | .public_url' | grep '^https' | head -1)
-  WEB_URL=$(echo "$TUNNELS" | jq -r '.tunnels[] | select(.name=="web") | .public_url' | grep '^https' | head -1)
-  [ -n "$API_URL" ] && [ -n "$WEB_URL" ] && break
+for i in {1..40}; do
+  TUNNELS=$(curl -s http://localhost:4040/api/tunnels || echo '{"tunnels":[]}')
+  API_URL=$(jq -r '.tunnels[] | select(.name=="api") | select(.public_url | startswith("https://")) | .public_url' <<< "$TUNNELS" | head -1 || true)
+  WEB_URL=$(jq -r '.tunnels[] | select(.name=="web") | select(.public_url | startswith("https://")) | .public_url' <<< "$TUNNELS" | head -1 || true)
+  if [ -n "$API_URL" ] && [ -n "$WEB_URL" ]; then break; fi
   sleep 0.5
 done
 
