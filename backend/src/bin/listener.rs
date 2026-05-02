@@ -1,21 +1,98 @@
+use axum::{
+    extract::{State, WebSocketUpgrade},
+    response::IntoResponse,
+    routing::get,
+    Json, Router,
+};
+use axum::extract::ws::{Message, WebSocket};
+use chrono::Utc;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use std::collections::HashSet;
-use std::net::UdpSocket;
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::net::UdpSocket;
+use tokio::sync::{broadcast, RwLock};
+use tower_http::cors::CorsLayer;
 
-fn main() -> std::io::Result<()> {
-    let socket = UdpSocket::bind("0.0.0.0:9999")?;
-    println!("Listening on 0.0.0.0:9999...");
+#[derive(Clone, Serialize)]
+struct SenderInfo {
+    addr: String,
+    last_seen: String,
+    message_count: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct CotMessage {
+    uid: Option<String>,
+    time: Option<String>,
+    start: Option<String>,
+    stale: Option<String>,
+    lat: Option<String>,
+    lon: Option<String>,
+    remarks: Option<String>,
+    source: String,
+}
+
+struct AppState {
+    senders: RwLock<HashMap<String, SenderInfo>>,
+    cot_tx: broadcast::Sender<CotMessage>,
+}
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let (cot_tx, _) = broadcast::channel::<CotMessage>(256);
+
+    let state = Arc::new(AppState {
+        senders: RwLock::new(HashMap::new()),
+        cot_tx,
+    });
+
+    let udp_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        if let Err(e) = run_udp(udp_state).await {
+            eprintln!("UDP listener error: {e}");
+        }
+    });
+
+    let app = Router::new()
+        .route("/senders", get(get_senders))
+        .route("/ws", get(ws_handler))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let tcp = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    println!("HTTP/WS server on http://0.0.0.0:3000");
+    axum::serve(tcp, app).await?;
+
+    Ok(())
+}
+
+async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
+    let socket = UdpSocket::bind("0.0.0.0:9999").await?;
+    println!("Listening for CoT on 0.0.0.0:9999...");
 
     let mut buf = [0u8; 4096];
     let mut seen_uids: HashSet<String> = HashSet::new();
     let mut next_expected_seq: u64 = 1;
 
     loop {
-        let (amt, src) = socket.recv_from(&mut buf)?;
-        let xml = String::from_utf8_lossy(&buf[..amt]);
+        let (amt, src) = socket.recv_from(&mut buf).await?;
+        let xml = String::from_utf8_lossy(&buf[..amt]).to_string();
+        let src_str = src.to_string();
 
-        println!("--- Incoming CoT from {} ---", src);
+        println!("--- Incoming CoT from {} ---", src_str);
+
+        {
+            let mut senders = state.senders.write().await;
+            let entry = senders.entry(src_str.clone()).or_insert_with(|| SenderInfo {
+                addr: src_str.clone(),
+                last_seen: String::new(),
+                message_count: 0,
+            });
+            entry.last_seen = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+            entry.message_count += 1;
+        }
 
         match parse_cot(&xml) {
             Some(data) => {
@@ -48,9 +125,55 @@ fn main() -> std::io::Result<()> {
                     }
                 }
 
-                print_cot(data);
+                let cot_msg = CotMessage {
+                    uid: data.uid,
+                    time: data.time,
+                    start: data.start,
+                    stale: data.stale,
+                    lat: data.lat,
+                    lon: data.lon,
+                    remarks: data.remarks,
+                    source: src_str,
+                };
+
+                print_cot(&cot_msg);
+                let _ = state.cot_tx.send(cot_msg);
             }
             None => println!("Failed to parse CoT message\n"),
+        }
+    }
+}
+
+async fn get_senders(State(state): State<Arc<AppState>>) -> Json<Vec<SenderInfo>> {
+    let senders = state.senders.read().await;
+    Json(senders.values().cloned().collect())
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws(socket, state))
+}
+
+async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>) {
+    let mut rx = state.cot_tx.subscribe();
+
+    loop {
+        match rx.recv().await {
+            Ok(msg) => {
+                let json = match serde_json::to_string(&msg) {
+                    Ok(j) => j,
+                    Err(_) => continue,
+                };
+                if socket.send(Message::Text(json)).await.is_err() {
+                    break;
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                eprintln!("WS client lagged, dropped {} messages", n);
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
         }
     }
 }
@@ -59,7 +182,7 @@ fn parse_seq(uid: &str) -> Option<u64> {
     uid.strip_prefix("test-")?.parse().ok()
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct CotData {
     uid: Option<String>,
     time: Option<String>,
@@ -136,20 +259,18 @@ fn parse_cot(xml: &str) -> Option<CotData> {
     Some(data)
 }
 
-fn print_cot(data: CotData) {
-    println!("UID:      {}", data.uid.unwrap_or_else(|| "N/A".into()));
-    println!("Time:     {}", data.time.unwrap_or_else(|| "N/A".into()));
-    println!("Start:    {}", data.start.unwrap_or_else(|| "N/A".into()));
-    println!("Stale:    {}", data.stale.unwrap_or_else(|| "N/A".into()));
+fn print_cot(msg: &CotMessage) {
+    println!("UID:      {}", msg.uid.as_deref().unwrap_or("N/A"));
+    println!("Time:     {}", msg.time.as_deref().unwrap_or("N/A"));
+    println!("Start:    {}", msg.start.as_deref().unwrap_or("N/A"));
+    println!("Stale:    {}", msg.stale.as_deref().unwrap_or("N/A"));
     println!(
         "Position: lat={}, lon={}",
-        data.lat.unwrap_or_else(|| "N/A".into()),
-        data.lon.unwrap_or_else(|| "N/A".into())
+        msg.lat.as_deref().unwrap_or("N/A"),
+        msg.lon.as_deref().unwrap_or("N/A")
     );
-
-    if let Some(r) = data.remarks {
+    if let Some(r) = &msg.remarks {
         println!("Remarks:  {}", r);
     }
-
     println!("--------------------------------------\n");
 }
