@@ -60,6 +60,7 @@ export const computeConfInt = (event: {
 type RawCot = {
   uid: string;
   cotType: string;
+  sensorType: CotEvent["sensorType"];
   time: string;
   start: string;
   stale: string;

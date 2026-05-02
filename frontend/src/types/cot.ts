@@ -23,11 +23,23 @@ export type LinkStatus =
   | "stale"
   | "offline";
 
+export type SensorType =
+  | "radar"
+  | "sonar"
+  | "eo_ir"
+  | "sigint"
+  | "acoustic"
+  | "seismic"
+  | "ais"
+  | "lidar"
+  | "ew";
+
 export type CotEvent = {
   uid: string;
   cotType: string;
   affiliation: Affiliation;
   dimension: Dimension;
+  sensorType: SensorType;
   time: string;
   start: string;
   stale: string;

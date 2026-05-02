@@ -1,6 +1,7 @@
 import { PRESET_BBOX } from "@/config/constants";
-import { enrichCot } from "@/lib/cot";
-import type { CotEvent } from "@/types/cot";
+import { enrichCot, parseDimension } from "@/lib/cot";
+import { SENSORS_BY_DIMENSION } from "@/lib/sensor";
+import type { CotEvent, Dimension, SensorType } from "@/types/cot";
 
 const COT_TYPES = [
   "a-f-G-U-C",
@@ -27,11 +28,20 @@ const REMARK_FRAGMENTS = [
   "asset",
 ];
 
+const POSITION_VEL = 0.001;
+const VELOCITY_MULT: Record<Dimension, number> = {
+  air: 6,
+  ground: 1,
+  sea_surface: 1.5,
+  sea_subsurface: 0.5,
+  space: 0.2,
+  sof: 1.5,
+  other: 1,
+};
+
 const HEALTH_STEP = 0.012;
 const HEALTH_MIN = 0.05;
 const HEALTH_MAX = 0.99;
-
-const POSITION_VEL = 0.00006;
 
 const clamp = (n: number, min: number, max: number) =>
   Math.min(max, Math.max(min, n));
@@ -47,6 +57,8 @@ const pick = <T,>(arr: readonly T[]): T =>
 export type MockTrack = {
   uid: string;
   cotType: string;
+  dimension: Dimension;
+  sensorType: SensorType;
   lat: number;
   lon: number;
   vLat: number;
@@ -57,16 +69,24 @@ export type MockTrack = {
 
 export const seedTracks = (count: number): MockTrack[] => {
   const { west, east, south, north } = PRESET_BBOX;
-  return Array.from({ length: count }, (_, i) => ({
-    uid: `mock-${i.toString().padStart(3, "0")}`,
-    cotType: pick(COT_TYPES),
-    lat: randInRange(south, north),
-    lon: randInRange(west, east),
-    vLat: randInRange(-POSITION_VEL, POSITION_VEL),
-    vLon: randInRange(-POSITION_VEL, POSITION_VEL),
-    health: randInRange(0.55, 0.95),
-    vHealth: randInRange(-HEALTH_STEP, HEALTH_STEP),
-  }));
+  return Array.from({ length: count }, (_, i) => {
+    const cotType = pick(COT_TYPES);
+    const dimension = parseDimension(cotType);
+    const mult = VELOCITY_MULT[dimension];
+    const sensorType = pick(SENSORS_BY_DIMENSION[dimension]);
+    return {
+      uid: `mock-${i.toString().padStart(3, "0")}`,
+      cotType,
+      dimension,
+      sensorType,
+      lat: randInRange(south, north),
+      lon: randInRange(west, east),
+      vLat: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
+      vLon: randInRange(-POSITION_VEL, POSITION_VEL) * mult,
+      health: randInRange(0.55, 0.95),
+      vHealth: randInRange(-HEALTH_STEP, HEALTH_STEP),
+    };
+  });
 };
 
 export const stepTrack = (track: MockTrack): MockTrack => {
@@ -95,6 +115,7 @@ export const emitFromTrack = (track: MockTrack): CotEvent => {
   return enrichCot({
     uid: track.uid,
     cotType: track.cotType,
+    sensorType: track.sensorType,
     time: new Date(now).toISOString(),
     start: new Date(now).toISOString(),
     stale: new Date(now + staleOffsetMs).toISOString(),

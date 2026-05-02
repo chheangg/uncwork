@@ -1,6 +1,7 @@
-import { IconLayer, LineLayer } from "@deck.gl/layers";
+import { IconLayer, LineLayer, TextLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent, Dimension } from "@/types/cot";
+import { sensorLabel } from "@/lib/sensor";
 import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
 
@@ -68,6 +69,36 @@ export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
       getPosition: { duration: TRANSITION_MS, type: "interpolation" },
       getSize: { duration: TRANSITION_MS, type: "interpolation" },
       getColor: { duration: TRANSITION_MS, type: "interpolation" },
+    },
+  }),
+  new TextLayer<CotEvent>({
+    id: "link-label",
+    data: events,
+    pickable: false,
+    getPosition: elevatedPosition,
+    getText: (e) =>
+      `${sensorLabel(e.sensorType)}  ${Math.round(e.confInt * 100)}%`,
+    getSize: 11,
+    getColor: [255, 240, 220, 240],
+    getPixelOffset: [0, -38],
+    fontFamily: "JetBrains Mono, ui-monospace, monospace",
+    fontWeight: 600,
+    background: true,
+    backgroundPadding: [5, 2, 5, 2],
+    getBackgroundColor: (e) => {
+      const [r, g, b] = statusColor(e.status);
+      return [r, g, b, 210];
+    },
+    getBorderColor: [10, 5, 5, 255],
+    getBorderWidth: 1,
+    billboard: true,
+    parameters: { depthCompare: "always" },
+    outlineColor: [0, 0, 0, 255],
+    outlineWidth: 2,
+    characterSet: "auto",
+    transitions: {
+      getPosition: { duration: TRANSITION_MS, type: "interpolation" },
+      getBackgroundColor: { duration: TRANSITION_MS, type: "interpolation" },
     },
   }),
 ];
