@@ -1,7 +1,11 @@
 import { IconLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
-import { statusColor } from "@/features/links/lib/link-style";
+import {
+  heatmapBaseAlpha,
+  statusColor,
+} from "@/features/links/lib/link-style";
+import { useLayersStore } from "@/stores/layers";
 
 // Soft-edged disc sprite: a single radial-gradient SVG used by every
 // track. mask: true tells IconLayer to treat the sprite's alpha as a
@@ -11,14 +15,15 @@ import { statusColor } from "@/features/links/lib/link-style";
 // blending, overlapping discs fizz out into a soft glow instead of
 // stacking as hard circles.
 const SPRITE_PX = 128;
-// Lower center opacity so additive blend doesn't saturate to white
-// after 2-3 overlapping discs. Falloff stays smooth.
+// Solid bright core, smooth falloff. Per-basemap alpha (see
+// heatmapBaseAlpha) keeps the additive blend from clipping while
+// still leaving the centers clearly visible.
 const SOFT_DISC_SVG =
   `<svg xmlns="http://www.w3.org/2000/svg" width="${SPRITE_PX}" height="${SPRITE_PX}" viewBox="0 0 ${SPRITE_PX} ${SPRITE_PX}">` +
   `<defs><radialGradient id="g" cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" gradientUnits="userSpaceOnUse">` +
-  `<stop offset="0" stop-color="#fff" stop-opacity="0.78"/>` +
-  `<stop offset="0.4" stop-color="#fff" stop-opacity="0.42"/>` +
-  `<stop offset="0.75" stop-color="#fff" stop-opacity="0.14"/>` +
+  `<stop offset="0" stop-color="#fff" stop-opacity="1"/>` +
+  `<stop offset="0.35" stop-color="#fff" stop-opacity="0.6"/>` +
+  `<stop offset="0.7" stop-color="#fff" stop-opacity="0.22"/>` +
   `<stop offset="1" stop-color="#fff" stop-opacity="0"/>` +
   `</radialGradient></defs>` +
   `<circle cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" fill="url(#g)"/>` +
@@ -31,11 +36,8 @@ const SOFT_DISC = {
   mask: true as const,
 };
 
-// Per-disc alpha: dialed down from 180 -> 105. Combined with the
-// dimmer status palette and lower SVG center opacity, three
-// overlapping discs land at a comfortable highlight rather than
-// blowing out to white.
-const ALPHA = 105;
+// Per-disc alpha is sourced from heatmapBaseAlpha() which returns a
+// per-basemap value (topo gets more punch, satellite stays soft).
 const SIZE_MIN_PX = 80;
 const SIZE_MAX_PX = 280;
 
@@ -44,23 +46,30 @@ const sizeFor = (e: CotEvent): number =>
 
 export const buildHeatmapLayers = (events: CotEvent[]): Layer[] => {
   const visible = events.filter((e) => e.status !== "offline");
+  const mapStyle = useLayersStore.getState().mapStyle;
+  const alpha = heatmapBaseAlpha();
   return [
     new IconLayer<CotEvent>({
       id: "confidence-heatmap",
       data: visible,
       pickable: false,
       sizeUnits: "pixels",
-      billboard: true,
+      // Lay the disc flat on the ground plane so it tilts with the
+      // map pitch and bearing instead of always facing the camera.
+      // sizeUnits stays "pixels" so screen size is stable regardless
+      // of zoom -- the disc looks like a glow painted on the
+      // terrain that pivots as the camera moves.
+      billboard: false,
       getIcon: () => SOFT_DISC,
       getPosition: (e) => [e.lon, e.lat, 0],
       getSize: sizeFor,
       getColor: (e) => {
         const [r, g, b] = statusColor(e.status);
-        return [r, g, b, ALPHA];
+        return [r, g, b, alpha];
       },
       updateTriggers: {
         getSize: visible.map((e) => e.confInt.toFixed(2)).join(","),
-        getColor: visible.map((e) => e.status).join(","),
+        getColor: `${mapStyle}|${visible.map((e) => e.status).join(",")}`,
       },
       parameters: {
         depthCompare: "always",
