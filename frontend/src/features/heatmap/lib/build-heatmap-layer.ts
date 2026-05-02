@@ -1,18 +1,22 @@
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
+import { statusColor } from "@/features/links/lib/link-style";
 
-// Anchored on the link-status palette (link-style.ts) so the heatmap
-// reads as the same semantic gradient as the per-track status badges:
-// healthy green -> degraded yellow -> stale orange -> critical red.
+// Use the exact same RGBs as the per-link status palette so a green
+// hot-spot on the heatmap reads as "healthy" and a red one reads as
+// "critical" -- no chromatic drift between widgets.
+const [hr, hg, hb] = statusColor("healthy");
+const [yr, yg, yb] = statusColor("degraded");
+const [or_, og, ob] = statusColor("stale");
+const [cr, cg, cb] = statusColor("critical");
+
 const COLOR_RAMP: [number, number, number, number][] = [
   [0, 0, 0, 0],
-  [74, 222, 128, 110],
-  [140, 235, 110, 170],
-  [255, 209, 102, 205],
-  [255, 140, 66, 225],
-  [255, 58, 58, 240],
-  [200, 20, 20, 245],
+  [hr, hg, hb, 130],
+  [yr, yg, yb, 200],
+  [or_, og, ob, 225],
+  [cr, cg, cb, 245],
 ];
 
 export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
@@ -23,10 +27,9 @@ export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
     // Weight encodes uncertainty (1 - confInt) with a small density
     // baseline so high-confidence tracks still register as faint heat.
     getWeight: (e) => 0.15 + (1 - e.confInt) * 0.85,
-    // Anchor the gradient to absolute weight. Without this, deck.gl
-    // auto-normalizes the visible max to the top of the ramp, so a
-    // single high-confidence track would render as the critical-red
-    // top stop instead of the healthy-green low stop.
+    // Anchor the gradient to absolute weight. With colorDomain [0.1,1]
+    // and 5 stops, weight 0.32 -> healthy / 0.55 -> degraded / 0.78 ->
+    // stale / 1.0 -> critical. Same thresholds the status badges use.
     colorDomain: [0.1, 1],
     aggregation: "MEAN",
     colorRange: COLOR_RAMP,

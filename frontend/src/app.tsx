@@ -6,7 +6,12 @@ import {
   useLiveFeed,
   useMockFeed,
 } from "@/features/data-source";
-import { buildLinkLayers, useAffectedAugment } from "@/features/links";
+import {
+  buildClusterLayers,
+  buildLinkLayers,
+  clusterPaths,
+  useAffectedAugment,
+} from "@/features/links";
 import { buildHeatmapLayer } from "@/features/heatmap";
 import {
   buildTrailsLayers,
@@ -44,9 +49,8 @@ export const App = () => {
   const visible = useLayersStore((s) => s.visible);
   const crt = useLayersStore((s) => s.crt);
   const bbox = useViewportStore((s) => s.bbox);
-  const zoomedOut = useViewStateStore(
-    (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
-  );
+  const zoom = useViewStateStore((s) => s.viewState.zoom);
+  const zoomedOut = zoom < HEATMAP_MAX_ZOOM;
   const animTime = useAnimatedSeconds(33);
   const renderTime = animTime - RENDER_LAG_S;
 
@@ -65,6 +69,11 @@ export const App = () => {
 
   const heatmapActive = visible.heatmap && zoomedOut;
 
+  const { singletons, clusters } = useMemo(
+    () => clusterPaths(visiblePaths, zoom),
+    [visiblePaths, zoom],
+  );
+
   const heatmapLayer = useMemo(
     () => (heatmapActive ? buildHeatmapLayer(visibleEvents) : null),
     [visibleEvents, heatmapActive],
@@ -72,10 +81,13 @@ export const App = () => {
 
   const linkLayers = useMemo(
     () =>
-      visible.links
-        ? buildLinkLayers(visiblePaths, renderTime, animTime)
-        : [],
-    [visiblePaths, renderTime, animTime, visible.links],
+      visible.links ? buildLinkLayers(singletons, renderTime, animTime) : [],
+    [singletons, renderTime, animTime, visible.links],
+  );
+
+  const clusterLayers = useMemo(
+    () => (visible.links ? buildClusterLayers(clusters) : []),
+    [clusters, visible.links],
   );
 
   const trailsLayers = useMemo(
@@ -88,9 +100,10 @@ export const App = () => {
     const result: Layer[] = [];
     result.push(...trailsLayers);
     if (heatmapLayer) result.push(heatmapLayer);
+    result.push(...clusterLayers);
     result.push(...linkLayers);
     return result;
-  }, [trailsLayers, heatmapLayer, linkLayers]);
+  }, [trailsLayers, heatmapLayer, clusterLayers, linkLayers]);
 
   const statusCounts = useMemo(
     () => countByStatus(visibleEvents),
