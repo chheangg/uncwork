@@ -191,25 +191,48 @@ fn fetch_viewport(client: &reqwest::blocking::Client) -> Viewport {
     }
 }
 
+enum FetchOutcome {
+    Ok(Vec<StateVector>),
+    RateLimited(u64),
+    Err(String),
+}
+
 fn fetch_opensky(
     client: &reqwest::blocking::Client,
     vp: &Viewport,
-) -> Result<Vec<StateVector>, Box<dyn std::error::Error>> {
+) -> FetchOutcome {
     let url = format!(
         "{}?lamin={}&lomin={}&lamax={}&lomax={}",
         OPENSKY_URL, vp.south, vp.west, vp.north, vp.east,
     );
 
-    let body: serde_json::Value = client
-        .get(&url)
-        .timeout(Duration::from_secs(8))
-        .send()?
-        .json()?;
+    let resp = match client.get(&url).timeout(Duration::from_secs(8)).send() {
+        Ok(r) => r,
+        Err(e) => return FetchOutcome::Err(format!("send: {e}")),
+    };
+
+    if resp.status().as_u16() == 429 {
+        let retry_after = resp
+            .headers()
+            .get("x-rate-limit-retry-after-seconds")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(60);
+        return FetchOutcome::RateLimited(retry_after);
+    }
+    if !resp.status().is_success() {
+        return FetchOutcome::Err(format!("http status: {}", resp.status()));
+    }
+
+    let body: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => return FetchOutcome::Err(format!("json: {e}")),
+    };
 
     let mut result = Vec::new();
     let states = match body["states"].as_array() {
         Some(s) => s,
-        None => return Ok(result),
+        None => return FetchOutcome::Ok(result),
     };
 
     for state in states {
@@ -249,7 +272,7 @@ fn fetch_opensky(
         });
     }
 
-    Ok(result)
+    FetchOutcome::Ok(result)
 }
 
 fn run_fetcher(senders: Vec<mpsc::Sender<Vec<StateVector>>>) {
@@ -261,8 +284,8 @@ fn run_fetcher(senders: Vec<mpsc::Sender<Vec<StateVector>>>) {
             "[fetcher] OpenSky bbox lat=[{:.3},{:.3}] lon=[{:.3},{:.3}]",
             vp.south, vp.north, vp.west, vp.east
         );
-        match fetch_opensky(&client, &vp) {
-            Ok(aircraft) => {
+        let sleep_secs = match fetch_opensky(&client, &vp) {
+            FetchOutcome::Ok(aircraft) => {
                 println!(
                     "[fetcher] {} aircraft -> {} units",
                     aircraft.len(),
@@ -271,10 +294,22 @@ fn run_fetcher(senders: Vec<mpsc::Sender<Vec<StateVector>>>) {
                 for tx in &senders {
                     let _ = tx.send(aircraft.clone());
                 }
+                OPENSKY_POLL_SECS
             }
-            Err(e) => eprintln!("[fetcher] OpenSky fetch error: {e}"),
-        }
-        thread::sleep(Duration::from_secs(OPENSKY_POLL_SECS));
+            FetchOutcome::RateLimited(retry_after) => {
+                let backoff = retry_after.clamp(60, 60 * 60);
+                eprintln!(
+                    "[fetcher] OpenSky 429 rate limited; backing off {}s",
+                    backoff
+                );
+                backoff
+            }
+            FetchOutcome::Err(e) => {
+                eprintln!("[fetcher] OpenSky fetch error: {e}; backing off 30s");
+                30
+            }
+        };
+        thread::sleep(Duration::from_secs(sleep_secs));
     }
 }
 
