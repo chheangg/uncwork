@@ -6,12 +6,7 @@ import {
   useLiveFeed,
   useMockFeed,
 } from "@/features/data-source";
-import {
-  buildClusterLayers,
-  buildLinkLayers,
-  clusterPaths,
-  useAffectedAugment,
-} from "@/features/links";
+import { buildLinkLayers, useAffectedAugment } from "@/features/links";
 import { buildHeatmapLayer } from "@/features/heatmap";
 import {
   buildTrailsLayers,
@@ -31,8 +26,6 @@ import {
 import { useEventStore, selectEventList } from "@/stores/events";
 import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
-import { useViewportStore } from "@/stores/viewport";
-import { inBbox } from "@/lib/bbox";
 import { HEATMAP_MAX_ZOOM } from "@/config/constants";
 
 // Render slightly behind real time so we always have a future
@@ -48,85 +41,54 @@ export const App = () => {
   const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
   const crt = useLayersStore((s) => s.crt);
-  const bbox = useViewportStore((s) => s.bbox);
-  const zoom = useViewStateStore((s) => s.viewState.zoom);
-  const zoomedOut = zoom < HEATMAP_MAX_ZOOM;
+  const zoomedOut = useViewStateStore(
+    (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
+  );
   const animTime = useAnimatedSeconds(33);
   const renderTime = animTime - RENDER_LAG_S;
 
-  // Backend streams the whole default region; we cull to the current
-  // viewport at render time so panning is instant and we keep
-  // history for tracks even when they briefly leave view.
-  const visibleEvents = useMemo(
-    () => events.filter((e) => inBbox(e.lat, e.lon, bbox)),
-    [events, bbox],
-  );
-  const visiblePaths = useMemo(
-    () =>
-      trackPaths.filter((p) => inBbox(p.latest.lat, p.latest.lon, bbox)),
-    [trackPaths, bbox],
-  );
-
   const heatmapActive = visible.heatmap && zoomedOut;
 
-  const { singletons, clusters } = useMemo(
-    () => clusterPaths(visiblePaths, zoom),
-    [visiblePaths, zoom],
-  );
-
   const heatmapLayer = useMemo(
-    () => (heatmapActive ? buildHeatmapLayer(visibleEvents) : null),
-    [visibleEvents, heatmapActive],
+    () => (heatmapActive ? buildHeatmapLayer(events) : null),
+    [events, heatmapActive],
   );
 
   const linkLayers = useMemo(
     () =>
-      visible.links ? buildLinkLayers(singletons, renderTime, animTime) : [],
-    [singletons, renderTime, animTime, visible.links],
-  );
-
-  const clusterLayers = useMemo(
-    () => (visible.links ? buildClusterLayers(clusters) : []),
-    [clusters, visible.links],
+      visible.links ? buildLinkLayers(trackPaths, renderTime, animTime) : [],
+    [trackPaths, renderTime, animTime, visible.links],
   );
 
   const trailsLayers = useMemo(
-    () =>
-      visible.trails ? buildTrailsLayers(visiblePaths, renderTime) : [],
-    [visiblePaths, renderTime, visible.trails],
+    () => (visible.trails ? buildTrailsLayers(trackPaths, renderTime) : []),
+    [trackPaths, renderTime, visible.trails],
   );
 
   const layers = useMemo<Layer[]>(() => {
     const result: Layer[] = [];
     result.push(...trailsLayers);
     if (heatmapLayer) result.push(heatmapLayer);
-    result.push(...clusterLayers);
     result.push(...linkLayers);
     return result;
-  }, [trailsLayers, heatmapLayer, clusterLayers, linkLayers]);
+  }, [trailsLayers, heatmapLayer, linkLayers]);
 
-  const statusCounts = useMemo(
-    () => countByStatus(visibleEvents),
-    [visibleEvents],
-  );
+  const statusCounts = useMemo(() => countByStatus(events), [events]);
   const affiliationCounts = useMemo(
-    () => countByAffiliation(visibleEvents),
-    [visibleEvents],
+    () => countByAffiliation(events),
+    [events],
   );
-  const meanConf = useMemo(() => meanConfidence(visibleEvents), [visibleEvents]);
+  const meanConf = useMemo(() => meanConfidence(events), [events]);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-terminal-bg text-terminal-fg">
       <MapView layers={layers} />
       {crt && <div className="crt-overlay" />}
-      <MissionHeader
-        trackCount={visibleEvents.length}
-        meanConfidence={meanConf}
-      />
+      <MissionHeader trackCount={events.length} meanConfidence={meanConf} />
       <aside className="pointer-events-auto absolute top-16 left-3 z-10 flex w-72 flex-col gap-3">
         <DataSourceToggle />
         <LayerTogglePanel />
-        <StatusSummary counts={statusCounts} total={visibleEvents.length} />
+        <StatusSummary counts={statusCounts} total={events.length} />
       </aside>
       <aside className="pointer-events-auto absolute top-16 right-3 z-10 flex w-72 flex-col gap-3">
         <AffiliationSummary counts={affiliationCounts} />
