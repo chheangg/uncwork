@@ -28,4 +28,4 @@ export const MISSION = {
   defcon: 3,
 } as const;
 
-export const HEATMAP_MAX_ZOOM = 11;
+export const HEATMAP_MAX_ZOOM = 14;
