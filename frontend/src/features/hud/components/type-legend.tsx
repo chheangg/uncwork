@@ -1,30 +1,28 @@
 import { Panel } from "@/components/ui/panel";
 import { previewSvg } from "@/features/links";
-import type { Affiliation, Dimension } from "@/types/cot";
+import type { Dimension } from "@/types/cot";
 
 type LegendItem = {
   dimension: Dimension;
-  affiliation: Affiliation;
   label: string;
   hint: string;
 };
 
 const ITEMS: LegendItem[] = [
-  { dimension: "ground", affiliation: "friendly", label: "Ground", hint: "vehicle / unit" },
-  { dimension: "air", affiliation: "friendly", label: "Air", hint: "uav / rotor" },
-  { dimension: "sea_surface", affiliation: "friendly", label: "Surface", hint: "vessel" },
-  { dimension: "sea_subsurface", affiliation: "friendly", label: "Subsurface", hint: "submersible" },
-  { dimension: "space", affiliation: "friendly", label: "Space", hint: "satellite" },
-  { dimension: "sof", affiliation: "friendly", label: "SOF", hint: "special ops" },
-  { dimension: "ground", affiliation: "hostile", label: "Hostile GND", hint: "threat unit" },
-  { dimension: "air", affiliation: "hostile", label: "Hostile Air", hint: "incoming" },
+  { dimension: "ground", label: "Ground", hint: "armor / vehicle" },
+  { dimension: "air", label: "Air", hint: "rotor / fixed / uav" },
+  { dimension: "sea_surface", label: "Surface", hint: "warship / vessel" },
+  { dimension: "sea_subsurface", label: "Subsurface", hint: "submersible" },
+  { dimension: "space", label: "Space", hint: "satellite asset" },
+  { dimension: "sof", label: "SOF", hint: "special ops" },
+  { dimension: "other", label: "Other", hint: "asset" },
 ];
 
 export const TypeLegend = () => (
-  <Panel title="Link Types" hint="shape · affiliation">
+  <Panel title="Link Types" hint="status on pole · trail">
     <ul className="grid grid-cols-2 gap-x-2 gap-y-2">
       {ITEMS.map((item) => (
-        <LegendRow key={`${item.dimension}-${item.affiliation}`} item={item} />
+        <LegendRow key={item.dimension} item={item} />
       ))}
     </ul>
   </Panel>
@@ -34,9 +32,7 @@ const LegendRow = ({ item }: { item: LegendItem }) => (
   <li className="flex items-center gap-2 min-w-0">
     <div
       className="block h-7 w-7 shrink-0"
-      dangerouslySetInnerHTML={{
-        __html: previewSvg(item.dimension, item.affiliation),
-      }}
+      dangerouslySetInnerHTML={{ __html: previewSvg(item.dimension) }}
     />
     <div className="leading-tight min-w-0 flex-1">
       <div className="text-[10px] uppercase tracking-wider text-terminal-fg truncate">

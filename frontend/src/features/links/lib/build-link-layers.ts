@@ -38,7 +38,7 @@ export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
     getTargetPosition: elevatedPosition,
     getColor: (e) => {
       const [r, g, b] = statusColor(e.status);
-      return [r, g, b, 200];
+      return [r, g, b, Math.round(160 + e.confInt * 80)];
     },
     getWidth: 1.5,
     transitions: {
@@ -53,14 +53,21 @@ export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
     sizeUnits: "pixels",
     getPosition: elevatedPosition,
     getIcon: (e) => iconFor(e),
-    getSize: (e) => 40 + (1 - e.confInt) * 14,
-    sizeMinPixels: 32,
+    getSize: (e) => 36 + e.confInt * 18,
+    getColor: (e) => [
+      255,
+      255,
+      255,
+      Math.round(255 * (0.45 + e.confInt * 0.55)),
+    ],
+    sizeMinPixels: 28,
     sizeMaxPixels: 64,
     billboard: true,
     parameters: { depthCompare: "always" },
     transitions: {
       getPosition: { duration: TRANSITION_MS, type: "interpolation" },
       getSize: { duration: TRANSITION_MS, type: "interpolation" },
+      getColor: { duration: TRANSITION_MS, type: "interpolation" },
     },
   }),
 ];

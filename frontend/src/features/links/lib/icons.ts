@@ -10,7 +10,7 @@ import {
   GiTank,
 } from "react-icons/gi";
 import type { IconType } from "react-icons";
-import type { Affiliation, CotEvent, Dimension } from "@/types/cot";
+import type { CotEvent, Dimension } from "@/types/cot";
 
 export type IconDef = {
   url: string;
@@ -21,16 +21,8 @@ export type IconDef = {
 };
 
 const SIZE = 64;
-
-const AFFILIATION_COLOR: Record<Affiliation, string> = {
-  friendly: "#58a6ff",
-  hostile: "#ff3a3a",
-  neutral: "#4ade80",
-  unknown: "#ffd166",
-  pending: "#ff8c42",
-  assumed: "#a371f7",
-  suspect: "#d674a8",
-};
+const ICON_FILL = "#e9d9a8";
+const ICON_HALO = "#040404";
 
 const DIMENSION_ICON: Record<Dimension, IconType> = {
   air: GiJetFighter,
@@ -58,29 +50,23 @@ const dimensionInner = (() => {
   };
 })();
 
-const buildSvg = (
-  dimension: Dimension,
-  affiliation: Affiliation,
-  inline: boolean,
-): string => {
-  const color = AFFILIATION_COLOR[affiliation];
+const buildSvg = (dimension: Dimension, inline: boolean): string => {
   const inner = dimensionInner(dimension);
   const dims = inline
     ? `width="100%" height="100%"`
     : `width="${SIZE}" height="${SIZE}"`;
-  const transform = `translate(4 4) scale(0.109)`;
-  const halo = `<g stroke="#000" stroke-width="44" stroke-linejoin="round" stroke-linecap="round" fill="#000" opacity="0.85">${inner}</g>`;
-  const body = `<g fill="${color}">${inner}</g>`;
+  const transform = `translate(5 5) scale(0.105)`;
+  const halo = `<g stroke="${ICON_HALO}" stroke-width="32" stroke-linejoin="round" stroke-linecap="round" fill="${ICON_HALO}" opacity="0.92">${inner}</g>`;
+  const body = `<g fill="${ICON_FILL}">${inner}</g>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" ${dims} viewBox="0 0 ${SIZE} ${SIZE}" preserveAspectRatio="xMidYMid meet"><g transform="${transform}" fill-rule="evenodd">${halo}${body}</g></svg>`;
 };
 
-const URL_CACHE = new Map<string, IconDef>();
+const URL_CACHE = new Map<Dimension, IconDef>();
 
 export const iconFor = (event: CotEvent): IconDef => {
-  const key = `${event.dimension}:${event.affiliation}`;
-  const hit = URL_CACHE.get(key);
+  const hit = URL_CACHE.get(event.dimension);
   if (hit) return hit;
-  const svg = buildSvg(event.dimension, event.affiliation, false);
+  const svg = buildSvg(event.dimension, false);
   const def: IconDef = {
     url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
     width: SIZE,
@@ -88,11 +74,9 @@ export const iconFor = (event: CotEvent): IconDef => {
     anchorY: SIZE,
     mask: false,
   };
-  URL_CACHE.set(key, def);
+  URL_CACHE.set(event.dimension, def);
   return def;
 };
 
-export const previewSvg = (
-  dimension: Dimension,
-  affiliation: Affiliation,
-): string => buildSvg(dimension, affiliation, true);
+export const previewSvg = (dimension: Dimension): string =>
+  buildSvg(dimension, true);

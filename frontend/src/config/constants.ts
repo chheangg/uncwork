@@ -1,18 +1,18 @@
 export const PRESET_VIEW = {
-  longitude: 30.5234,
-  latitude: 50.4501,
-  zoom: 15.4,
+  longitude: 37.176,
+  latitude: 48.281,
+  zoom: 14.5,
   pitch: 60,
   bearing: -18,
-  minZoom: 11,
+  minZoom: 9,
   maxZoom: 19,
 } as const;
 
 export const PRESET_BBOX = {
-  west: 30.46,
-  south: 50.405,
-  east: 30.62,
-  north: 50.495,
+  west: 37.10,
+  south: 48.235,
+  east: 37.255,
+  north: 48.33,
 } as const;
 
 export const STALE_THRESHOLDS_MS = {
@@ -23,7 +23,9 @@ export const STALE_THRESHOLDS_MS = {
 
 export const MISSION = {
   callsign: "TASK FORCE FOXTROT",
-  ao: "UA-KYV-01",
+  ao: "UA-PKV-01",
   classification: "UNCLASSIFIED // FOR DEMO",
   defcon: 3,
 } as const;
+
+export const HEATMAP_MAX_ZOOM = 13;

@@ -3,7 +3,7 @@ import type { Layer } from "@deck.gl/core";
 import { statusColor } from "@/features/links/lib/link-style";
 import type { TrackPath } from "../hooks/use-track-history";
 
-export const TRAIL_LENGTH_S = 5;
+export const TRAIL_LENGTH_S = 20;
 
 export const buildTrailsLayer = (
   paths: TrackPath[],
@@ -18,10 +18,13 @@ export const buildTrailsLayer = (
       const [r, g, b] = statusColor(d.status);
       return [r, g, b];
     },
-    opacity: 0.85,
-    widthMinPixels: 2.5,
+    opacity: 0.95,
+    widthMinPixels: 5,
+    widthMaxPixels: 8,
     rounded: true,
     fadeTrail: true,
     trailLength: TRAIL_LENGTH_S,
     currentTime,
+    capRounded: true,
+    jointRounded: true,
   });

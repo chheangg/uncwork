@@ -21,21 +21,28 @@ import {
 } from "@/features/hud";
 import { useEventStore, selectEventList } from "@/stores/events";
 import { useLayersStore } from "@/stores/layers";
+import { useViewStateStore } from "@/stores/view-state";
+import { HEATMAP_MAX_ZOOM } from "@/config/constants";
 
 export const App = () => {
   useMockFeed();
   const events = useEventStore(selectEventList);
   const visible = useLayersStore((s) => s.visible);
   const crt = useLayersStore((s) => s.crt);
+  const zoomedOut = useViewStateStore(
+    (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
+  );
   const trackPaths = useTrackHistory();
   const currentTime = useAnimatedSeconds(33);
 
+  const heatmapActive = visible.heatmap && zoomedOut;
+
   const staticLayers = useMemo<Layer[]>(() => {
     const result: Layer[] = [];
-    if (visible.heatmap) result.push(buildHeatmapLayer(events));
+    if (heatmapActive) result.push(buildHeatmapLayer(events));
     if (visible.links) result.push(...buildLinkLayers(events));
     return result;
-  }, [events, visible.heatmap, visible.links]);
+  }, [events, heatmapActive, visible.links]);
 
   const layers = useMemo<Layer[]>(() => {
     if (!visible.trails) return staticLayers;

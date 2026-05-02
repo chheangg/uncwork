@@ -51,6 +51,20 @@ const detectSource = (map: MapInstance): SourceShape | undefined => {
   return undefined;
 };
 
+const TERRAIN_SOURCE_ID = "mapbox-dem";
+
+export const ensureTerrain = (map: MapInstance) => {
+  if (!map.getSource(TERRAIN_SOURCE_ID)) {
+    map.addSource(TERRAIN_SOURCE_ID, {
+      type: "raster-dem",
+      url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+      tileSize: 512,
+      maxzoom: 14,
+    });
+  }
+  map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.6 });
+};
+
 export const ensureBuildingLayer = (map: MapInstance) => {
   if (hasNativeExtrudedBuildings(map)) return;
   if (map.getLayer(CUSTOM_BUILDING_LAYER_ID)) return;

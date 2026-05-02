@@ -5,7 +5,12 @@ import { Map, type MapRef } from "react-map-gl";
 import { env } from "@/config/env";
 import { PRESET_VIEW } from "@/config/constants";
 import { useLayersStore } from "@/stores/layers";
-import { ensureBuildingLayer, setBuildingVisibility } from "../lib/map-style";
+import { useViewStateStore } from "@/stores/view-state";
+import {
+  ensureBuildingLayer,
+  ensureTerrain,
+  setBuildingVisibility,
+} from "../lib/map-style";
 
 type MapViewProps = {
   layers: Layer[];
@@ -14,7 +19,9 @@ type MapViewProps = {
 type ViewState = typeof PRESET_VIEW & { padding?: Record<string, number> };
 
 export const MapView = ({ layers }: MapViewProps) => {
-  const [viewState, setViewState] = useState<ViewState>(PRESET_VIEW);
+  const viewState = useViewStateStore((s) => s.viewState);
+  const setViewState = useViewStateStore((s) => s.set);
+  const resetView = useViewStateStore((s) => s.reset);
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<MapRef | null>(null);
   const buildingsVisible = useLayersStore((s) => s.visible.buildings);
@@ -22,17 +29,18 @@ export const MapView = ({ layers }: MapViewProps) => {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey) {
-        setViewState({ ...PRESET_VIEW });
+        resetView();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [resetView]);
 
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current?.getMap();
     if (!map) return;
+    ensureTerrain(map);
     ensureBuildingLayer(map);
     setBuildingVisibility(map, buildingsVisible);
   }, [mapReady, buildingsVisible]);
@@ -46,9 +54,16 @@ export const MapView = ({ layers }: MapViewProps) => {
       viewState={viewState}
       controller
       layers={layers}
-      onViewStateChange={({ viewState: next }) =>
-        setViewState(next as ViewState)
-      }
+      onViewStateChange={({ viewState: next }) => {
+        const v = next as ViewState;
+        setViewState({
+          longitude: v.longitude,
+          latitude: v.latitude,
+          zoom: v.zoom,
+          pitch: v.pitch,
+          bearing: v.bearing,
+        });
+      }}
     >
       <Map
         ref={mapRef}

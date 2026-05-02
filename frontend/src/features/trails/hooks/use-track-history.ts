@@ -9,8 +9,8 @@ export type TrackPath = {
   status: LinkStatus;
 };
 
-const RETAIN_S = 8;
-const STALE_REMOVE_S = 12;
+const RETAIN_S = 25;
+const STALE_REMOVE_S = 30;
 
 type HistoryEntry = {
   path: [number, number, number][];
