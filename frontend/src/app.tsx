@@ -2,10 +2,10 @@ import { useMemo } from "react";
 import type { Layer } from "@deck.gl/core";
 import { LayerTogglePanel, MapView } from "@/features/map";
 import { DataSourceToggle, useMockFeed } from "@/features/data-source";
-import { buildLinkLayers } from "@/features/links";
+import { buildLinkLayers, useAffectedAugment } from "@/features/links";
 import { buildHeatmapLayer } from "@/features/heatmap";
 import {
-  buildTrailsLayer,
+  buildTrailsLayers,
   useAnimatedSeconds,
   useTrackHistory,
 } from "@/features/trails";
@@ -27,6 +27,7 @@ import { HEATMAP_MAX_ZOOM } from "@/config/constants";
 export const App = () => {
   useMockFeed();
   const events = useEventStore(selectEventList);
+  const augmentedEvents = useAffectedAugment(events);
   const visible = useLayersStore((s) => s.visible);
   const crt = useLayersStore((s) => s.crt);
   const zoomedOut = useViewStateStore(
@@ -43,22 +44,23 @@ export const App = () => {
   );
 
   const linkLayers = useMemo(
-    () => (visible.links ? buildLinkLayers(events, currentTime) : []),
-    [events, currentTime, visible.links],
+    () =>
+      visible.links ? buildLinkLayers(augmentedEvents, currentTime) : [],
+    [augmentedEvents, currentTime, visible.links],
   );
 
-  const trailsLayer = useMemo(
-    () => (visible.trails ? buildTrailsLayer(trackPaths, currentTime) : null),
+  const trailsLayers = useMemo(
+    () => (visible.trails ? buildTrailsLayers(trackPaths, currentTime) : []),
     [trackPaths, currentTime, visible.trails],
   );
 
   const layers = useMemo<Layer[]>(() => {
     const result: Layer[] = [];
-    if (trailsLayer) result.push(trailsLayer);
+    result.push(...trailsLayers);
     if (heatmapLayer) result.push(heatmapLayer);
     result.push(...linkLayers);
     return result;
-  }, [trailsLayer, heatmapLayer, linkLayers]);
+  }, [trailsLayers, heatmapLayer, linkLayers]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
   const affiliationCounts = useMemo(

@@ -2,6 +2,7 @@ import { IconLayer, LineLayer, TextLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
 import { sensorLabel } from "@/lib/sensor";
+import type { AugmentedEvent } from "../hooks/use-affected-augment";
 import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
 
@@ -58,10 +59,10 @@ const statusAlpha = (
 };
 
 export const buildLinkLayers = (
-  events: CotEvent[],
+  events: AugmentedEvent[],
   currentTime: number,
 ): Layer[] => [
-  new LineLayer<CotEvent>({
+  new LineLayer<AugmentedEvent>({
     id: "link-pole",
     data: events,
     pickable: false,
@@ -78,26 +79,26 @@ export const buildLinkLayers = (
       getTargetPosition: { duration: TRANSITION_MS, type: "interpolation" },
     },
   }),
-  new IconLayer<CotEvent>({
+  new IconLayer<AugmentedEvent>({
     id: "link-icon",
     data: events,
     pickable: true,
     sizeUnits: "pixels",
     getPosition: elevatedPosition,
     getIcon: (e) => iconFor(e),
-    getSize: (e) => 36 + e.confInt * 18,
+    getSize: (e) => 38 + e.confInt * 18,
     getColor: (e) => [
       255,
       255,
       255,
       Math.round(255 * statusAlpha(e.status, e.confInt, e.uid, currentTime)),
     ],
-    sizeMinPixels: 28,
-    sizeMaxPixels: 64,
+    sizeMinPixels: 30,
+    sizeMaxPixels: 68,
     billboard: true,
     parameters: { depthCompare: "always" },
     updateTriggers: {
-      getIcon: events.map((e) => e.status).join(","),
+      getIcon: events.map((e) => `${e.status}|${e.recentlyAffected}`).join(","),
       getColor: currentTime,
     },
     transitions: {
@@ -105,23 +106,23 @@ export const buildLinkLayers = (
       getSize: { duration: TRANSITION_MS, type: "interpolation" },
     },
   }),
-  new TextLayer<CotEvent>({
+  new TextLayer<AugmentedEvent>({
     id: "link-label",
     data: events,
     pickable: false,
     getPosition: elevatedPosition,
     getText: (e) =>
       `${sensorLabel(e.sensorType)}  ${Math.round(e.confInt * 100)}%`,
-    getSize: 11,
-    getColor: [255, 240, 220, 240],
-    getPixelOffset: [0, -38],
+    getSize: 13,
+    getColor: [255, 245, 225, 245],
+    getPixelOffset: [0, -42],
     fontFamily: "JetBrains Mono, ui-monospace, monospace",
-    fontWeight: 600,
+    fontWeight: 700,
     background: true,
-    backgroundPadding: [5, 2, 5, 2],
+    backgroundPadding: [7, 3, 7, 3],
     getBackgroundColor: (e) => {
       const [r, g, b] = statusColor(e.status);
-      return [r, g, b, 210];
+      return [r, g, b, 220];
     },
     getBorderColor: [10, 5, 5, 255],
     getBorderWidth: 1,

@@ -50,31 +50,41 @@ const dimensionInner = (() => {
   };
 })();
 
-const renderBadge = (status: LinkStatus): string => {
-  if (status === "healthy") return "";
-  const x = 42;
+const BADGE_SIZE = 28;
+
+const renderBadge = (status: LinkStatus, recovery: boolean): string => {
+  if (status === "healthy" && !recovery) return "";
+
+  const x = 36;
   const y = 0;
-  const s = 22;
+  const s = BADGE_SIZE;
   const cx = x + s / 2;
   const cy = y + s / 2;
 
+  if (recovery) {
+    return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1.5}" fill="#4ade80" stroke="#0a0a0a" stroke-width="2"/><path d="M ${cx - 6} ${cy + 1} L ${cx - 1} ${cy + 6} L ${cx + 7} ${cy - 5}" stroke="#0a0a0a" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  }
+
   if (status === "degraded" || status === "critical") {
     const fill = status === "critical" ? "#ff3a3a" : "#ffd166";
-    return `<g><polygon points="${cx},${y + 1} ${x + s - 1},${y + s - 1} ${x + 1},${y + s - 1}" fill="${fill}" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/><text x="${cx}" y="${y + s - 4}" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="900" fill="#000">!</text></g>`;
+    return `<g><polygon points="${cx},${y + 1} ${x + s - 1},${y + s - 1} ${x + 1},${y + s - 1}" fill="${fill}" stroke="#0a0a0a" stroke-width="2" stroke-linejoin="round"/><text x="${cx}" y="${y + s - 5}" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" font-weight="900" fill="#0a0a0a">!</text></g>`;
   }
+
   if (status === "stale") {
-    return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="#ff8c42" stroke="#000" stroke-width="1.5"/><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 5}" stroke="#000" stroke-width="2" stroke-linecap="round"/><line x1="${cx}" y1="${cy}" x2="${cx + 5}" y2="${cy}" stroke="#000" stroke-width="2" stroke-linecap="round"/></g>`;
+    return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1.5}" fill="#ff8c42" stroke="#0a0a0a" stroke-width="2"/><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 7}" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/><line x1="${cx}" y1="${cy}" x2="${cx + 7}" y2="${cy}" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/></g>`;
   }
-  return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1}" fill="#666" stroke="#000" stroke-width="1.5"/><line x1="${cx - 5}" y1="${cy - 5}" x2="${cx + 5}" y2="${cy + 5}" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><line x1="${cx + 5}" y1="${cy - 5}" x2="${cx - 5}" y2="${cy + 5}" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></g>`;
+
+  return `<g><circle cx="${cx}" cy="${cy}" r="${s / 2 - 1.5}" fill="#888" stroke="#0a0a0a" stroke-width="2"/><line x1="${cx - 6}" y1="${cy - 6}" x2="${cx + 6}" y2="${cy + 6}" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="${cx + 6}" y1="${cy - 6}" x2="${cx - 6}" y2="${cy + 6}" stroke="#fff" stroke-width="3" stroke-linecap="round"/></g>`;
 };
 
 const buildSvg = (
   dimension: Dimension,
   status: LinkStatus,
+  recovery: boolean,
   inline: boolean,
 ): string => {
   const inner = dimensionInner(dimension);
-  const badge = renderBadge(status);
+  const badge = renderBadge(status, recovery);
   const dims = inline
     ? `width="100%" height="100%"`
     : `width="${SIZE}" height="${SIZE}"`;
@@ -86,11 +96,14 @@ const buildSvg = (
 
 const URL_CACHE = new Map<string, IconDef>();
 
-export const iconFor = (event: CotEvent): IconDef => {
-  const key = `${event.dimension}:${event.status}`;
+export const iconFor = (
+  event: CotEvent & { recentlyAffected?: boolean },
+): IconDef => {
+  const recovery = !!event.recentlyAffected;
+  const key = `${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}`;
   const hit = URL_CACHE.get(key);
   if (hit) return hit;
-  const svg = buildSvg(event.dimension, event.status, false);
+  const svg = buildSvg(event.dimension, event.status, recovery, false);
   const def: IconDef = {
     url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
     width: SIZE,
@@ -105,4 +118,5 @@ export const iconFor = (event: CotEvent): IconDef => {
 export const previewSvg = (
   dimension: Dimension,
   status: LinkStatus = "healthy",
-): string => buildSvg(dimension, status, true);
+  recovery: boolean = false,
+): string => buildSvg(dimension, status, recovery, true);
