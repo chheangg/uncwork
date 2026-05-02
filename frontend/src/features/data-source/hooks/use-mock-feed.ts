@@ -8,8 +8,8 @@ import {
   type MockTrack,
 } from "@/mock/fake-cot";
 
-const TRACK_COUNT = 64;
-const TICK_MS = 1500;
+const TRACK_COUNT = 28;
+const TICK_MS = 2500;
 
 export const useMockFeed = () => {
   const source = useDataSourceStore((s) => s.source);

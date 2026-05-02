@@ -1,24 +1,10 @@
-import { ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import { IconLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
-import {
-  affiliationFill,
-  radiusFromConfidence,
-  statusColor,
-  type RGBA,
-} from "./link-style";
+import { radiusFromConfidence, statusColor } from "./link-style";
+import { iconFor } from "./icons";
 
-const AFFILIATION_GLYPH: Record<string, string> = {
-  friendly: "F",
-  hostile: "H",
-  neutral: "N",
-  unknown: "?",
-  pending: "P",
-  assumed: "A",
-  suspect: "S",
-};
-
-const FG: RGBA = [10, 16, 20, 255];
+const TRANSITION_MS = 2400;
 
 export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
   new ScatterplotLayer<CotEvent>({
@@ -28,36 +14,34 @@ export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
     radiusUnits: "meters",
     stroked: false,
     getPosition: (e) => [e.lon, e.lat],
-    getRadius: (e) => radiusFromConfidence(e.confInt) * 1.6,
+    getRadius: (e) => radiusFromConfidence(e.confInt) * 1.4,
     getFillColor: (e) => {
       const [r, g, b] = statusColor(e.status);
-      return [r, g, b, 40];
+      return [r, g, b, 60];
+    },
+    transitions: {
+      getPosition: { duration: TRANSITION_MS, type: "interpolation" },
+      getRadius: { duration: TRANSITION_MS, type: "interpolation" },
+      getFillColor: { duration: TRANSITION_MS, type: "interpolation" },
     },
   }),
-  new ScatterplotLayer<CotEvent>({
-    id: "link-marker",
+  new IconLayer<CotEvent>({
+    id: "link-icon",
     data: events,
     pickable: true,
-    radiusUnits: "meters",
-    stroked: true,
-    lineWidthUnits: "pixels",
-    getPosition: (e) => [e.lon, e.lat],
-    getRadius: (e) => radiusFromConfidence(e.confInt),
-    getFillColor: (e) => affiliationFill(e.affiliation),
-    getLineColor: (e) => statusColor(e.status),
-    getLineWidth: 2,
-  }),
-  new TextLayer<CotEvent>({
-    id: "link-glyph",
-    data: events,
-    pickable: false,
     sizeUnits: "pixels",
     getPosition: (e) => [e.lon, e.lat],
-    getText: (e) => AFFILIATION_GLYPH[e.affiliation] ?? "?",
-    getSize: 11,
-    getColor: FG,
-    fontFamily: "JetBrains Mono, monospace",
-    fontWeight: 700,
-    background: false,
+    getIcon: (e) => iconFor(e),
+    getSize: (e) => 24 + (1 - e.confInt) * 8,
+    sizeMinPixels: 18,
+    sizeMaxPixels: 40,
+    billboard: true,
+    parameters: {
+      depthCompare: "always",
+    },
+    transitions: {
+      getPosition: { duration: TRANSITION_MS, type: "interpolation" },
+      getSize: { duration: TRANSITION_MS, type: "interpolation" },
+    },
   }),
 ];
