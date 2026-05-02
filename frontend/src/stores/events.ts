@@ -6,6 +6,7 @@ type EventStore = {
   upsertMany: (incoming: CotEvent[]) => void;
   remove: (uid: string) => void;
   clear: () => void;
+  pruneOlderThan: (cutoffMs: number) => void;
 };
 
 export const useEventStore = create<EventStore>((set) => ({
@@ -24,6 +25,21 @@ export const useEventStore = create<EventStore>((set) => ({
       return { events: next };
     }),
   clear: () => set({ events: {} }),
+  pruneOlderThan: (cutoffMs) =>
+    set((state) => {
+      const next: Record<string, CotEvent> = {};
+      let removed = 0;
+      for (const [uid, ev] of Object.entries(state.events)) {
+        const t = Date.parse(ev.time);
+        if (Number.isFinite(t) && t >= cutoffMs) {
+          next[uid] = ev;
+        } else {
+          removed += 1;
+        }
+      }
+      if (removed === 0) return state;
+      return { events: next };
+    }),
 }));
 
 export const selectEventList = (state: EventStore) =>
