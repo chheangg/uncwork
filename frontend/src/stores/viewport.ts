@@ -1,12 +1,8 @@
 import { create } from "zustand";
 import { PRESET_BBOX } from "@/config/constants";
+import type { Bbox } from "@/types/bbox";
 
-export type Bbox = {
-  south: number;
-  west: number;
-  north: number;
-  east: number;
-};
+export type { Bbox };
 
 type ViewportStore = {
   bbox: Bbox;
