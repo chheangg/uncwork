@@ -2,14 +2,17 @@ import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent } from "@/types/cot";
 
+// Anchored on the link-status palette (link-style.ts) so the heatmap
+// reads as the same semantic gradient as the per-track status badges:
+// healthy green -> degraded yellow -> stale orange -> critical red.
 const COLOR_RAMP: [number, number, number, number][] = [
   [0, 0, 0, 0],
-  [40, 200, 90, 90],
-  [110, 230, 110, 150],
-  [220, 230, 80, 190],
-  [255, 150, 60, 215],
-  [240, 70, 50, 230],
-  [200, 30, 30, 240],
+  [74, 222, 128, 110],
+  [140, 235, 110, 170],
+  [255, 209, 102, 205],
+  [255, 140, 66, 225],
+  [255, 58, 58, 240],
+  [200, 20, 20, 245],
 ];
 
 export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
@@ -26,5 +29,5 @@ export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
     threshold: 0.04,
     colorRange: COLOR_RAMP,
     aggregation: "MEAN",
-    opacity: 0.75,
+    opacity: 0.8,
   });
