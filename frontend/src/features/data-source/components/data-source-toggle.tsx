@@ -5,7 +5,7 @@ import { useEventStore } from "@/stores/events";
 
 const SOURCES: { key: DataSource; label: string; hint: string }[] = [
   { key: "mock", label: "Mock", hint: "fake feed" },
-  { key: "live", label: "Live", hint: "udp bridge" },
+  { key: "live", label: "Live", hint: "ads-b ws" },
   { key: "off", label: "Off", hint: "no data" },
 ];
 

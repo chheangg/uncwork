@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import type { Layer } from "@deck.gl/core";
 import { LayerTogglePanel, MapView } from "@/features/map";
-import { DataSourceToggle, useMockFeed } from "@/features/data-source";
+import {
+  DataSourceToggle,
+  useLiveFeed,
+  useMockFeed,
+} from "@/features/data-source";
 import { buildLinkLayers, useAffectedAugment } from "@/features/links";
 import { buildHeatmapLayer } from "@/features/heatmap";
 import {
@@ -26,6 +30,7 @@ import { HEATMAP_MAX_ZOOM } from "@/config/constants";
 
 export const App = () => {
   useMockFeed();
+  useLiveFeed();
   const events = useEventStore(selectEventList);
   const augmentedEvents = useAffectedAugment(events);
   const visible = useLayersStore((s) => s.visible);

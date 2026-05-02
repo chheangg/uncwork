@@ -20,6 +20,7 @@ const SENSOR_LABEL: Record<SensorType, string> = {
   ais: "AIS",
   lidar: "LDR",
   ew: "EW",
+  adsb: "ADS-B",
 };
 
 const SENSOR_FULL: Record<SensorType, string> = {
@@ -32,6 +33,7 @@ const SENSOR_FULL: Record<SensorType, string> = {
   ais: "AIS",
   lidar: "LIDAR",
   ew: "EW",
+  adsb: "ADS-B",
 };
 
 export const sensorLabel = (s: SensorType): string => SENSOR_LABEL[s];

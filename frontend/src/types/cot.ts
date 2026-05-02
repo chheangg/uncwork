@@ -32,7 +32,8 @@ export type SensorType =
   | "seismic"
   | "ais"
   | "lidar"
-  | "ew";
+  | "ew"
+  | "adsb";
 
 export type CotEvent = {
   uid: string;

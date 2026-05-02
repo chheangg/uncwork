@@ -30,6 +30,8 @@ struct CotMessage {
     stale: Option<String>,
     lat: Option<String>,
     lon: Option<String>,
+    hae: Option<String>,
+    flight_number: Option<String>,
     remarks: Option<String>,
     source: String,
 }
@@ -104,7 +106,8 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                 }
                 seen_uids.insert(uid.clone());
 
-                if let Some(seq) = parse_seq(&uid) {
+                // Sequence number is embedded in remarks ("... seq=N")
+                if let Some(seq) = data.remarks.as_deref().and_then(parse_seq_from_remarks) {
                     if seq < next_expected_seq {
                         println!(
                             "OUT-OF-ORDER: seq={} arrived after seq={}",
@@ -132,6 +135,8 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     stale: data.stale,
                     lat: data.lat,
                     lon: data.lon,
+                    hae: data.hae,
+                    flight_number: data.callsign,
                     remarks: data.remarks,
                     source: src_str,
                 };
@@ -178,8 +183,11 @@ async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>) {
     }
 }
 
-fn parse_seq(uid: &str) -> Option<u64> {
-    uid.strip_prefix("test-")?.parse().ok()
+// Extracts "seq=N" from the remarks text produced by the sender.
+fn parse_seq_from_remarks(remarks: &str) -> Option<u64> {
+    remarks
+        .split_whitespace()
+        .find_map(|token| token.strip_prefix("seq=")?.parse().ok())
 }
 
 #[derive(Default)]
@@ -190,6 +198,8 @@ struct CotData {
     stale: Option<String>,
     lat: Option<String>,
     lon: Option<String>,
+    hae: Option<String>,
+    callsign: Option<String>,
     remarks: Option<String>,
 }
 
@@ -234,7 +244,17 @@ fn parse_cot(xml: &str) -> Option<CotData> {
                         match key.as_ref() {
                             "lat" => data.lat = Some(val),
                             "lon" => data.lon = Some(val),
+                            "hae" => data.hae = Some(val),
                             _ => {}
+                        }
+                    }
+                } else if tag == "contact" {
+                    for attr in e.attributes().flatten() {
+                        let key = String::from_utf8_lossy(attr.key.as_ref());
+                        let val = attr.unescape_value().unwrap_or_default().to_string();
+
+                        if key.as_ref() == "callsign" {
+                            data.callsign = Some(val);
                         }
                     }
                 }
@@ -260,17 +280,18 @@ fn parse_cot(xml: &str) -> Option<CotData> {
 }
 
 fn print_cot(msg: &CotMessage) {
-    println!("UID:      {}", msg.uid.as_deref().unwrap_or("N/A"));
-    println!("Time:     {}", msg.time.as_deref().unwrap_or("N/A"));
-    println!("Start:    {}", msg.start.as_deref().unwrap_or("N/A"));
-    println!("Stale:    {}", msg.stale.as_deref().unwrap_or("N/A"));
+    println!("UID:          {}", msg.uid.as_deref().unwrap_or("N/A"));
+    println!("Flight:       {}", msg.flight_number.as_deref().unwrap_or("N/A"));
+    println!("Time:         {}", msg.time.as_deref().unwrap_or("N/A"));
+    println!("Stale:        {}", msg.stale.as_deref().unwrap_or("N/A"));
     println!(
-        "Position: lat={}, lon={}",
+        "Position:     lat={}, lon={}, hae={}",
         msg.lat.as_deref().unwrap_or("N/A"),
-        msg.lon.as_deref().unwrap_or("N/A")
+        msg.lon.as_deref().unwrap_or("N/A"),
+        msg.hae.as_deref().unwrap_or("N/A"),
     );
     if let Some(r) = &msg.remarks {
-        println!("Remarks:  {}", r);
+        println!("Remarks:      {}", r);
     }
     println!("--------------------------------------\n");
 }
