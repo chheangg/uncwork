@@ -5,6 +5,7 @@ import {
   DataSourceToggle,
   useLiveFeed,
   useMockFeed,
+  useViewportSync,
 } from "@/features/data-source";
 import { buildLinkLayers, useAffectedAugment } from "@/features/links";
 import { buildHeatmapLayer } from "@/features/heatmap";
@@ -31,6 +32,7 @@ import { HEATMAP_MAX_ZOOM } from "@/config/constants";
 export const App = () => {
   useMockFeed();
   useLiveFeed();
+  useViewportSync();
   const events = useEventStore(selectEventList);
   const augmentedEvents = useAffectedAugment(events);
   const visible = useLayersStore((s) => s.visible);

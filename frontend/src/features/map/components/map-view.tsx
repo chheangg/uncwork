@@ -6,6 +6,7 @@ import { env } from "@/config/env";
 import { PRESET_VIEW } from "@/config/constants";
 import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
+import { useViewportStore } from "@/stores/viewport";
 import {
   ensureBuildingLayer,
   ensureTerrain,
@@ -45,7 +46,25 @@ export const MapView = ({ layers }: MapViewProps) => {
     setBuildingVisibility(map, buildingsVisible);
   }, [mapReady, buildingsVisible]);
 
-  const handleLoad = useCallback(() => setMapReady(true), []);
+  const setBbox = useViewportStore((s) => s.set);
+
+  const captureBbox = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const b = map.getBounds();
+    if (!b) return;
+    setBbox({
+      south: b.getSouth(),
+      west: b.getWest(),
+      north: b.getNorth(),
+      east: b.getEast(),
+    });
+  }, [setBbox]);
+
+  const handleLoad = useCallback(() => {
+    setMapReady(true);
+    captureBbox();
+  }, [captureBbox]);
 
   if (!env.mapboxToken) return <MissingTokenNotice />;
 
@@ -70,6 +89,7 @@ export const MapView = ({ layers }: MapViewProps) => {
         mapboxAccessToken={env.mapboxToken}
         mapStyle={env.mapStyleUrl}
         onLoad={handleLoad}
+        onMoveEnd={captureBbox}
         reuseMaps
         attributionControl={false}
       />

@@ -11,3 +11,8 @@ export const wsUrl = (path: string): string => {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${env.apiHost}${path}`;
 };
+
+export const httpUrl = (path: string): string => {
+  const proto = window.location.protocol === "https:" ? "https:" : "http:";
+  return `${proto}//${env.apiHost}${path}`;
+};

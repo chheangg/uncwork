@@ -8,7 +8,7 @@ use axum::extract::ws::{Message, WebSocket};
 use chrono::Utc;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
@@ -36,9 +36,25 @@ struct CotMessage {
     source: String,
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+struct Viewport {
+    south: f64,
+    west: f64,
+    north: f64,
+    east: f64,
+}
+
+const DEFAULT_VIEWPORT: Viewport = Viewport {
+    south: 36.5,
+    west: -123.5,
+    north: 38.5,
+    east: -121.0,
+};
+
 struct AppState {
     senders: RwLock<HashMap<String, SenderInfo>>,
     cot_tx: broadcast::Sender<CotMessage>,
+    viewport: RwLock<Viewport>,
 }
 
 #[tokio::main]
@@ -48,6 +64,7 @@ async fn main() -> std::io::Result<()> {
     let state = Arc::new(AppState {
         senders: RwLock::new(HashMap::new()),
         cot_tx,
+        viewport: RwLock::new(DEFAULT_VIEWPORT),
     });
 
     let udp_state = Arc::clone(&state);
@@ -60,6 +77,7 @@ async fn main() -> std::io::Result<()> {
     let app = Router::new()
         .route("/senders", get(get_senders))
         .route("/ws", get(ws_handler))
+        .route("/viewport", get(get_viewport).post(set_viewport))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -159,6 +177,19 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
 async fn get_senders(State(state): State<Arc<AppState>>) -> Json<Vec<SenderInfo>> {
     let senders = state.senders.read().await;
     Json(senders.values().cloned().collect())
+}
+
+async fn get_viewport(State(state): State<Arc<AppState>>) -> Json<Viewport> {
+    Json(*state.viewport.read().await)
+}
+
+async fn set_viewport(
+    State(state): State<Arc<AppState>>,
+    Json(vp): Json<Viewport>,
+) -> Json<Viewport> {
+    let mut current = state.viewport.write().await;
+    *current = vp;
+    Json(vp)
 }
 
 async fn ws_handler(
