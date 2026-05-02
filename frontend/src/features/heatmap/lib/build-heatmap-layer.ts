@@ -17,7 +17,10 @@ export const buildHeatmapLayer = (events: CotEvent[]): Layer =>
     id: "confidence-heatmap",
     data: events,
     getPosition: (e) => [e.lon, e.lat],
-    getWeight: (e) => 1 - e.confInt,
+    // Baseline weight per track so the heatmap reads as density even
+    // when every track is high-confidence (e.g., live ADS-B). Extra
+    // weight stacks for low-confidence/uncertain tracks.
+    getWeight: (e) => 0.35 + (1 - e.confInt) * 0.65,
     radiusPixels: 90,
     intensity: 1.2,
     threshold: 0.04,
