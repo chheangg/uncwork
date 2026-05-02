@@ -1,9 +1,10 @@
+use chrono::Utc;
 use rand::RngExt;
 use rand::rng;
 use std::collections::VecDeque;
 use std::net::UdpSocket;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 fn main() -> std::io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
@@ -17,10 +18,10 @@ fn main() -> std::io::Result<()> {
     loop {
         seq += 1;
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = Utc::now();
+        let stale = now + chrono::Duration::seconds(60);
+        let now_str = now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let stale_str = stale.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
         let msg = format!(
             r#"<event version="2.0" uid="test-{seq}" type="a-f-G-U-C"
@@ -29,8 +30,8 @@ time="{now}" start="{now}" stale="{stale}">
     <remarks>seq={seq}</remarks>
 </event>"#,
             seq = seq,
-            now = now,
-            stale = now + 60
+            now = now_str,
+            stale = stale_str
         );
 
         queue.push_back(msg);
@@ -72,8 +73,6 @@ time="{now}" start="{now}" stale="{stale}">
                 }
             }
         }
-
-        let n = rng.random_range(2..5);
 
         for msg in outgoing {
             socket.send_to(msg.as_bytes(), target)?;

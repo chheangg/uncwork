@@ -1,5 +1,6 @@
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use std::collections::HashSet;
 use std::net::UdpSocket;
 
 fn main() -> std::io::Result<()> {
@@ -7,6 +8,8 @@ fn main() -> std::io::Result<()> {
     println!("Listening on 0.0.0.0:9999...");
 
     let mut buf = [0u8; 4096];
+    let mut seen_uids: HashSet<String> = HashSet::new();
+    let mut next_expected_seq: u64 = 1;
 
     loop {
         let (amt, src) = socket.recv_from(&mut buf)?;
@@ -15,10 +18,45 @@ fn main() -> std::io::Result<()> {
         println!("--- Incoming CoT from {} ---", src);
 
         match parse_cot(&xml) {
-            Some(data) => print_cot(data),
+            Some(data) => {
+                let uid = data.uid.clone().unwrap_or_default();
+
+                if seen_uids.contains(&uid) {
+                    println!("DUPLICATE suppressed: {}\n", uid);
+                    continue;
+                }
+                seen_uids.insert(uid.clone());
+
+                if let Some(seq) = parse_seq(&uid) {
+                    if seq < next_expected_seq {
+                        println!(
+                            "OUT-OF-ORDER: seq={} arrived after seq={}",
+                            seq,
+                            next_expected_seq - 1
+                        );
+                    } else if seq > next_expected_seq {
+                        let dropped = seq - next_expected_seq;
+                        println!(
+                            "GAP detected: seq={} (missed {} message{})",
+                            seq,
+                            dropped,
+                            if dropped == 1 { "" } else { "s" }
+                        );
+                        next_expected_seq = seq + 1;
+                    } else {
+                        next_expected_seq = seq + 1;
+                    }
+                }
+
+                print_cot(data);
+            }
             None => println!("Failed to parse CoT message\n"),
         }
     }
+}
+
+fn parse_seq(uid: &str) -> Option<u64> {
+    uid.strip_prefix("test-")?.parse().ok()
 }
 
 #[derive(Default, Debug)]
@@ -100,19 +138,9 @@ fn parse_cot(xml: &str) -> Option<CotData> {
 
 fn print_cot(data: CotData) {
     println!("UID:      {}", data.uid.unwrap_or_else(|| "N/A".into()));
-    println!(
-        "Time:     {}",
-        data.time.unwrap_or_else(|| "N/A".into())
-    );
-    println!(
-        "Start:    {}",
-        data.start.unwrap_or_else(|| "N/A".into())
-    );
-    println!(
-        "Stale:    {}",
-        data.stale.unwrap_or_else(|| "N/A".into())
-    );
-
+    println!("Time:     {}", data.time.unwrap_or_else(|| "N/A".into()));
+    println!("Start:    {}", data.start.unwrap_or_else(|| "N/A".into()));
+    println!("Stale:    {}", data.stale.unwrap_or_else(|| "N/A".into()));
     println!(
         "Position: lat={}, lon={}",
         data.lat.unwrap_or_else(|| "N/A".into()),
