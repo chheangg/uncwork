@@ -25,6 +25,11 @@ export const useTrackHistory = (): TrackPath[] => {
   const events = useEventStore(selectEventList);
 
   return useMemo(() => {
+    if (events.length === 0) {
+      HISTORY.clear();
+      return [];
+    }
+
     const t = Date.now() / 1000;
 
     for (const e of events) {

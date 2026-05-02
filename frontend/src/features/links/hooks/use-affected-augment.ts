@@ -14,6 +14,11 @@ const HISTORY = new Map<string, Memory>();
 
 export const useAffectedAugment = (events: CotEvent[]): AugmentedEvent[] =>
   useMemo(() => {
+    if (events.length === 0) {
+      HISTORY.clear();
+      return [];
+    }
+
     const t = Date.now() / 1000;
     const out: AugmentedEvent[] = [];
     const liveUids = new Set<string>();
