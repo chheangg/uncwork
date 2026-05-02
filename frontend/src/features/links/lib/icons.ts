@@ -1,15 +1,15 @@
-import { createElement, type ComponentType } from "react";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  Anchor,
-  CircleDot,
-  Crosshair,
-  Plane,
-  Satellite,
-  Ship,
-  Truck,
-  type LucideProps,
-} from "lucide-react";
+  GiBattleship,
+  GiBullseye,
+  GiBrodieHelmet,
+  GiJetFighter,
+  GiSatelliteCommunication,
+  GiSubmarine,
+  GiTank,
+} from "react-icons/gi";
+import type { IconType } from "react-icons";
 import type { Affiliation, CotEvent, Dimension } from "@/types/cot";
 
 export type IconDef = {
@@ -32,24 +32,14 @@ const AFFILIATION_COLOR: Record<Affiliation, string> = {
   suspect: "#d674a8",
 };
 
-const DASHED: Record<Affiliation, boolean> = {
-  friendly: false,
-  hostile: false,
-  neutral: false,
-  unknown: false,
-  pending: true,
-  assumed: true,
-  suspect: true,
-};
-
-const DIMENSION_ICON: Record<Dimension, ComponentType<LucideProps>> = {
-  air: Plane,
-  ground: Truck,
-  sea_surface: Ship,
-  sea_subsurface: Anchor,
-  space: Satellite,
-  sof: Crosshair,
-  other: CircleDot,
+const DIMENSION_ICON: Record<Dimension, IconType> = {
+  air: GiJetFighter,
+  ground: GiTank,
+  sea_surface: GiBattleship,
+  sea_subsurface: GiSubmarine,
+  space: GiSatelliteCommunication,
+  sof: GiBrodieHelmet,
+  other: GiBullseye,
 };
 
 const dimensionInner = (() => {
@@ -58,11 +48,7 @@ const dimensionInner = (() => {
     const hit = cache[dim];
     if (hit) return hit;
     const fullSvg = renderToStaticMarkup(
-      createElement(DIMENSION_ICON[dim], {
-        size: 24,
-        color: "currentColor",
-        strokeWidth: 2.2,
-      }),
+      createElement(DIMENSION_ICON[dim], { size: 64 }),
     );
     const inner = fullSvg
       .replace(/^<svg[^>]*>/, "")
@@ -79,14 +65,13 @@ const buildSvg = (
 ): string => {
   const color = AFFILIATION_COLOR[affiliation];
   const inner = dimensionInner(dimension);
-  const dashAttr = DASHED[affiliation] ? ' stroke-dasharray="4 3"' : "";
   const dims = inline
     ? `width="100%" height="100%"`
     : `width="${SIZE}" height="${SIZE}"`;
-  const baseGroup = `<g transform="translate(3.2 3.2) scale(2.4)" fill="none" stroke-linecap="round" stroke-linejoin="round">`;
-  const shadow = `<g color="#000" stroke="#000" stroke-width="5" opacity="0.7">${inner}</g>`;
-  const stroke = `<g color="${color}" stroke="${color}" stroke-width="2.6"${dashAttr}>${inner}</g>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" ${dims} viewBox="0 0 ${SIZE} ${SIZE}" preserveAspectRatio="xMidYMid meet">${baseGroup}${shadow}${stroke}</g></svg>`;
+  const transform = `translate(4 4) scale(0.109)`;
+  const halo = `<g stroke="#000" stroke-width="44" stroke-linejoin="round" stroke-linecap="round" fill="#000" opacity="0.85">${inner}</g>`;
+  const body = `<g fill="${color}">${inner}</g>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" ${dims} viewBox="0 0 ${SIZE} ${SIZE}" preserveAspectRatio="xMidYMid meet"><g transform="${transform}" fill-rule="evenodd">${halo}${body}</g></svg>`;
 };
 
 const URL_CACHE = new Map<string, IconDef>();

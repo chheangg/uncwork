@@ -4,6 +4,7 @@ import { useLayersStore, type LayerKey } from "@/stores/layers";
 
 const LAYERS: { key: LayerKey; label: string }[] = [
   { key: "links", label: "Links" },
+  { key: "trails", label: "Trails" },
   { key: "heatmap", label: "Heatmap" },
   { key: "buildings", label: "Buildings" },
 ];
@@ -16,7 +17,7 @@ export const LayerTogglePanel = () => {
 
   return (
     <Panel title="Layers" hint="press r to reset view">
-      <div className="grid grid-cols-3 gap-1.5 mb-2">
+      <div className="grid grid-cols-2 gap-1.5 mb-2">
         {LAYERS.map(({ key, label }) => (
           <Toggle
             key={key}

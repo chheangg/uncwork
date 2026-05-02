@@ -1,7 +1,7 @@
-import { IconLayer, LineLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer, LineLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { CotEvent, Dimension } from "@/types/cot";
-import { radiusFromConfidence, statusColor } from "./link-style";
+import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
 
 const TRANSITION_MS = 2400;
@@ -29,31 +29,6 @@ const groundPosition = (e: CotEvent): [number, number, number] => [
 ];
 
 export const buildLinkLayers = (events: CotEvent[]): Layer[] => [
-  new ScatterplotLayer<CotEvent>({
-    id: "link-halo",
-    data: events,
-    pickable: false,
-    radiusUnits: "meters",
-    stroked: true,
-    filled: true,
-    lineWidthUnits: "pixels",
-    getPosition: groundPosition,
-    getRadius: (e) => radiusFromConfidence(e.confInt) * 1.4,
-    getFillColor: (e) => {
-      const [r, g, b] = statusColor(e.status);
-      return [r, g, b, 45];
-    },
-    getLineColor: (e) => {
-      const [r, g, b] = statusColor(e.status);
-      return [r, g, b, 180];
-    },
-    getLineWidth: 1.5,
-    transitions: {
-      getPosition: { duration: TRANSITION_MS, type: "interpolation" },
-      getRadius: { duration: TRANSITION_MS, type: "interpolation" },
-      getFillColor: { duration: TRANSITION_MS, type: "interpolation" },
-    },
-  }),
   new LineLayer<CotEvent>({
     id: "link-pole",
     data: events,

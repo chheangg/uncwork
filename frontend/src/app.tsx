@@ -5,6 +5,11 @@ import { DataSourceToggle, useMockFeed } from "@/features/data-source";
 import { buildLinkLayers } from "@/features/links";
 import { buildHeatmapLayer } from "@/features/heatmap";
 import {
+  buildTrailsLayer,
+  useAnimatedSeconds,
+  useTrackHistory,
+} from "@/features/trails";
+import {
   AffiliationSummary,
   FooterStrip,
   MissionHeader,
@@ -22,13 +27,20 @@ export const App = () => {
   const events = useEventStore(selectEventList);
   const visible = useLayersStore((s) => s.visible);
   const crt = useLayersStore((s) => s.crt);
+  const trackPaths = useTrackHistory();
+  const currentTime = useAnimatedSeconds(33);
 
-  const layers = useMemo<Layer[]>(() => {
+  const staticLayers = useMemo<Layer[]>(() => {
     const result: Layer[] = [];
     if (visible.heatmap) result.push(buildHeatmapLayer(events));
     if (visible.links) result.push(...buildLinkLayers(events));
     return result;
   }, [events, visible.heatmap, visible.links]);
+
+  const layers = useMemo<Layer[]>(() => {
+    if (!visible.trails) return staticLayers;
+    return [buildTrailsLayer(trackPaths, currentTime), ...staticLayers];
+  }, [staticLayers, trackPaths, currentTime, visible.trails]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
   const affiliationCounts = useMemo(

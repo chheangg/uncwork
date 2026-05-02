@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type LayerKey = "links" | "heatmap" | "buildings";
+export type LayerKey = "links" | "heatmap" | "buildings" | "trails";
 
 type LayersStore = {
   visible: Record<LayerKey, boolean>;
@@ -11,7 +11,7 @@ type LayersStore = {
 };
 
 export const useLayersStore = create<LayersStore>((set) => ({
-  visible: { links: true, heatmap: true, buildings: true },
+  visible: { links: true, heatmap: true, buildings: true, trails: true },
   crt: true,
   toggle: (key) =>
     set((state) => ({
