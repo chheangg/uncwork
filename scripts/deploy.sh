@@ -76,8 +76,15 @@ green "[3/5] starting sender (opensky -> cot xml)..."
 PIDS+=($!)
 
 green "[4/5] starting ngrok tunnels..."
+NGROK_DEFAULT="$HOME/Library/Application Support/ngrok/ngrok.yml"
+[ -f "$NGROK_DEFAULT" ] || {
+  red "ngrok authtoken not configured."
+  red "run:  ngrok config add-authtoken <your-token>"
+  exit 1
+}
+
 cat > "$NGROK_CONFIG" <<EOF
-version: "3"
+version: "2"
 tunnels:
   api:
     proto: http
@@ -87,8 +94,10 @@ tunnels:
     addr: 5173
 EOF
 
-ngrok start --all --config "$NGROK_CONFIG" --log stdout \
-  > "$LOG_DIR/ngrok.log" 2>&1 &
+ngrok start --all \
+  --config "$NGROK_DEFAULT" \
+  --config "$NGROK_CONFIG" \
+  --log stdout > "$LOG_DIR/ngrok.log" 2>&1 &
 PIDS+=($!)
 
 dim "    waiting for ngrok api..."
