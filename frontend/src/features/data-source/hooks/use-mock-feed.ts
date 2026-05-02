@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useDataSourceStore } from "@/stores/data-source";
 import { useEventStore } from "@/stores/events";
+import { useReplayStore } from "@/stores/replay";
 import {
   emitFromTrack,
   seedTracks,
@@ -12,11 +13,15 @@ const TICK_MS = 500;
 
 export const useMockFeed = () => {
   const source = useDataSourceStore((s) => s.source);
+  const mode = useReplayStore((s) => s.mode);
   const upsertMany = useEventStore((s) => s.upsertMany);
   const clear = useEventStore((s) => s.clear);
   const tracksRef = useRef<MockTrack[]>([]);
 
   useEffect(() => {
+    // Don't run mock feed in replay mode
+    if (mode === "replay") return;
+
     if (source !== "mock") {
       clear();
       tracksRef.current = [];
@@ -32,5 +37,5 @@ export const useMockFeed = () => {
     }, TICK_MS);
 
     return () => window.clearInterval(id);
-  }, [source, upsertMany, clear]);
+  }, [source, mode, upsertMany, clear]);
 };

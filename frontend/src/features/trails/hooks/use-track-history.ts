@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { CotEvent, LinkStatus } from "@/types/cot";
 import type { TrackPath } from "@/lib/track-path";
 import { TRAIL_FADE_S } from "../lib/build-trails-layer";
+import { useReplayStore } from "@/stores/replay";
 
 const POSITION_EPSILON = 1e-7;
 
@@ -23,15 +24,19 @@ export const useTrackHistory = <E extends CotEvent>(
       return [];
     }
 
+    const mode = useReplayStore.getState().mode;
     const t = Date.now() / 1000;
 
     for (const e of events) {
       const point: [number, number] = [e.lon, e.lat];
+      // In replay mode, use the event's actual timestamp; in live mode, use current time
+      const eventTime = mode === "replay" ? new Date(e.time).getTime() / 1000 : t;
+      
       const existing = HISTORY.get(e.uid);
       if (!existing) {
         HISTORY.set(e.uid, {
           path: [point],
-          timestamps: [t],
+          timestamps: [eventTime],
           statuses: [e.status],
           latest: e,
         });
@@ -46,16 +51,16 @@ export const useTrackHistory = <E extends CotEvent>(
       const statusChanged = lastStatus !== e.status;
       if (positionChanged || statusChanged) {
         existing.path.push(point);
-        existing.timestamps.push(t);
+        existing.timestamps.push(eventTime);
         existing.statuses.push(e.status);
       }
       existing.latest = e;
 
-      const cutoff = t - TRAIL_FADE_S;
+      const cutoff = mode === "replay" ? eventTime - TRAIL_FADE_S : t - TRAIL_FADE_S;
       let drop = 0;
       while (
         existing.timestamps.length - drop > 2 &&
-        (existing.timestamps[drop] ?? t) < cutoff
+        (existing.timestamps[drop] ?? eventTime) < cutoff
       ) {
         drop++;
       }
@@ -78,3 +83,4 @@ export const useTrackHistory = <E extends CotEvent>(
     }
     return out;
   }, [events]);
+

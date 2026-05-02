@@ -14,6 +14,8 @@ import {
   LinkDetailPanel,
   type ContextMenuState,
 } from "@/features/links";
+import { RecommenderPanel, useRecommender } from "@/features/recommender";
+import { EventTerminal, useDerivedLog } from "@/features/terminal";
 import { useSelectionStore } from "@/stores/selection";
 import { buildHeatmapLayers } from "@/features/heatmap";
 import {
@@ -22,12 +24,10 @@ import {
   useTrackHistory,
 } from "@/features/trails";
 import {
-  AffiliationSummary,
   FooterStrip,
   MissionHeader,
   StatusSummary,
   TypeLegend,
-  countByAffiliation,
   countByStatus,
   countStale,
   meanConfidence,
@@ -36,17 +36,30 @@ import { useEventStore, selectEventList } from "@/stores/events";
 import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
 import { HEATMAP_MAX_ZOOM } from "@/config/constants";
+import {
+  ReplayControls,
+  usePlaybackTick,
+  useReplayEvents,
+} from "@/features/replay";
+import { useReplayStore } from "@/stores/replay";
 
 // Render slightly behind real time so we always have a future
-// history sample to interpolate toward. Mock emits at 2Hz, live at
-// ~1Hz with chaos drops. 2s lag covers a single dropped packet on
-// live without the icon ever clamping to the last sample.
-const RENDER_LAG_S = 2.0;
+// history sample to interpolate toward. Mock emits at 2Hz (500ms),
+// so 0.6s lag gives us a buffer for smooth interpolation without
+// making the icon lag too far behind the visible trail.
+const RENDER_LAG_S = 0.6;
 
 export const App = () => {
   useMockFeed();
   useLiveFeed();
-  const events = useEventStore(selectEventList);
+  useDerivedLog();
+  usePlaybackTick();
+
+  const mode = useReplayStore((s) => s.mode);
+  const playhead = useReplayStore((s) => s.playhead);
+
+  const allEvents = useEventStore(selectEventList);
+  const events = useReplayEvents(allEvents);
   const augmentedEvents = useAffectedAugment(events);
   const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
@@ -55,7 +68,9 @@ export const App = () => {
     (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
   );
   const animTime = useAnimatedSeconds(33);
-  const renderTime = animTime - RENDER_LAG_S;
+  
+  // In replay mode, use playhead as the render time; in live mode, use animTime with lag
+  const renderTime = mode === "replay" ? playhead : animTime - RENDER_LAG_S;
 
   const heatmapActive = visible.heatmap && zoomedOut;
 
@@ -73,7 +88,8 @@ export const App = () => {
   // Trails fade in 0.5s steps (see build-trails-layer.ts); rebuilding
   // the PathLayer object 30Hz when the fade clock only ticks at 2Hz
   // is wasted work, so memoize on the quantized clock.
-  const trailsClock = Math.floor(animTime * 2) / 2;
+  // Use renderTime (not animTime) so trails stay synced with link icons.
+  const trailsClock = Math.floor(renderTime * 2) / 2;
   const trailsLayers = useMemo(
     () =>
       visible.trails ? buildTrailsLayers(trackPaths, trailsClock) : [],
@@ -89,10 +105,6 @@ export const App = () => {
   }, [trailsLayers, heatmapLayers, linkLayers]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
-  const affiliationCounts = useMemo(
-    () => countByAffiliation(events),
-    [events],
-  );
   const meanConf = useMemo(() => meanConfidence(events), [events]);
   const delayedCount = useMemo(() => countStale(events), [events]);
 
@@ -125,6 +137,7 @@ export const App = () => {
   );
 
   const detailOpen = selectedTrack !== null;
+  const recommendation = useRecommender(selectedTrack);
 
   useEffect(() => {
     if (!selectedTrack || selectedTrack.path.length === 0) return;
@@ -159,11 +172,11 @@ export const App = () => {
       </aside>
       {!detailOpen && (
         <aside className="pointer-events-auto absolute top-16 right-3 z-10 flex w-72 flex-col gap-3">
-          <AffiliationSummary counts={affiliationCounts} />
           <TypeLegend />
         </aside>
       )}
       <LinkDetailPanel track={selectedTrack} onClose={deselect} />
+      {detailOpen && <RecommenderPanel rec={recommendation} />}
       <TrackContextMenu
         menu={contextMenu}
         onDetail={(uid) => {
@@ -172,6 +185,8 @@ export const App = () => {
         }}
         onDismiss={() => setContextMenu(null)}
       />
+      <EventTerminal />
+      <ReplayControls />
       <FooterStrip />
     </div>
   );

@@ -4,6 +4,7 @@ import { enrichCot } from "@/lib/cot";
 import type { SensorType } from "@/types/cot";
 import { useDataSourceStore } from "@/stores/data-source";
 import { useEventStore } from "@/stores/events";
+import { useReplayStore } from "@/stores/replay";
 
 type WireMessage = {
   uid?: string | null;
@@ -73,6 +74,7 @@ const toCotEvent = (m: WireMessage) => {
 
 export const useLiveFeed = () => {
   const source = useDataSourceStore((s) => s.source);
+  const mode = useReplayStore((s) => s.mode);
   const upsertMany = useEventStore((s) => s.upsertMany);
   const clear = useEventStore((s) => s.clear);
   const wsRef = useRef<WebSocket | null>(null);
@@ -107,6 +109,12 @@ export const useLiveFeed = () => {
       }
       pendingRef.current = [];
     };
+
+    // Don't run live feed in replay mode
+    if (mode === "replay") {
+      teardown();
+      return;
+    }
 
     if (source !== "live") {
       teardown();
