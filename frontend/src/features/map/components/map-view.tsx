@@ -33,8 +33,9 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
   const deckRef = useRef<DeckGLRef | null>(null);
   const buildingsVisible = useLayersStore((s) => s.visible.buildings);
   const mapStyle = useLayersStore((s) => s.mapStyle);
+  const lastStyleRef = useRef<string | null>(null);
 
-  const mapStyleUrl = mapStyle === "satellite" 
+  const mapStyleUrl = mapStyle === "satellite"
     ? "mapbox://styles/mapbox/satellite-streets-v12"
     : env.mapStyleUrl;
 
@@ -67,6 +68,18 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
       map.off("style.load", apply);
     };
   }, [mapReady, buildingsVisible]);
+
+  // react-map-gl's prop-diff doesn't reliably re-fire setStyle
+  // (especially with reuseMaps). Drive the swap imperatively so DRK
+  // <-> SAT actually changes the basemap.
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    if (lastStyleRef.current === mapStyleUrl) return;
+    lastStyleRef.current = mapStyleUrl;
+    map.setStyle(mapStyleUrl);
+  }, [mapReady, mapStyleUrl]);
 
   const setBbox = useViewportStore((s) => s.set);
 

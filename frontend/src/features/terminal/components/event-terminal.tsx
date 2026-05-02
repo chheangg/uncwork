@@ -60,14 +60,6 @@ export const EventTerminal = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickyRef = useRef(true);
 
-  const uidCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const e of entries) {
-      if (e.uid) m.set(e.uid, (m.get(e.uid) ?? 0) + 1);
-    }
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [entries]);
-
   const allowedKinds = useMemo(() => {
     const set = new Set<LogEntryKind>();
     for (const g of KIND_GROUPS) {
@@ -77,6 +69,20 @@ export const EventTerminal = () => {
     }
     return set;
   }, [activeKindKeys]);
+
+  // Per-uid count is filtered by the active KIND set, so flipping a
+  // kind off narrows the TRACK dropdown to only uids that have
+  // matching entries left -- you can't pick a "ghost" track that's
+  // been filtered to zero.
+  const uidCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of entries) {
+      if (!e.uid) continue;
+      if (!allowedKinds.has(e.kind)) continue;
+      m.set(e.uid, (m.get(e.uid) ?? 0) + 1);
+    }
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [entries, allowedKinds]);
 
   const visible = useMemo<LogEntry[]>(
     () =>

@@ -38,30 +38,69 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
-  .crt-overlay {
+  .screen-frame {
     pointer-events: none;
     position: absolute;
     inset: 0;
-    background:
-      repeating-linear-gradient(
-        0deg,
-        rgba(0, 217, 255, 0.03) 0px,
-        rgba(0, 217, 255, 0.03) 1px,
-        transparent 1px,
-        transparent 3px
-      );
-    mix-blend-mode: screen;
-    z-index: 50;
+    z-index: 5;
   }
-  .crt-overlay::after {
+  .screen-frame::before,
+  .screen-frame::after {
     content: "";
     position: absolute;
+    border-color: rgba(0, 217, 255, 0.55);
+    width: 22px;
+    height: 22px;
+  }
+  .screen-frame::before {
+    top: 2px;
+    left: 2px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+  .screen-frame::after {
+    bottom: 2px;
+    right: 2px;
+    border-bottom: 1px solid;
+    border-right: 1px solid;
+  }
+  .screen-frame > .corner-tr,
+  .screen-frame > .corner-bl {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-color: rgba(0, 217, 255, 0.55);
+  }
+  .screen-frame > .corner-tr {
+    top: 2px;
+    right: 2px;
+    border-top: 1px solid;
+    border-right: 1px solid;
+  }
+  .screen-frame > .corner-bl {
+    bottom: 2px;
+    left: 2px;
+    border-bottom: 1px solid;
+    border-left: 1px solid;
+  }
+  .screen-frame > .sweep {
+    position: absolute;
     inset: 0;
-    background: radial-gradient(
-      ellipse at center,
-      transparent 55%,
-      rgba(0, 40, 60, 0.7) 100%
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(0, 217, 255, 0.06) 50%,
+      transparent 100%
     );
+    transform: translateY(-100%);
+    animation: hud-sweep 9s linear infinite;
+    mix-blend-mode: screen;
+  }
+  @keyframes hud-sweep {
+    0% { transform: translateY(-100%); opacity: 0; }
+    8% { opacity: 1; }
+    92% { opacity: 1; }
+    100% { transform: translateY(100%); opacity: 0; }
   }
   .replay-scrubber {
     @apply h-1.5 appearance-none rounded-full bg-terminal-fg/10 outline-none;

@@ -17,8 +17,6 @@ const MAP_STYLES: { key: MapStyle; label: string }[] = [
 export const LayerTogglePanel = () => {
   const visible = useLayersStore((s) => s.visible);
   const toggle = useLayersStore((s) => s.toggle);
-  const crt = useLayersStore((s) => s.crt);
-  const toggleCrt = useLayersStore((s) => s.toggleCrt);
   const mapStyle = useLayersStore((s) => s.mapStyle);
   const setMapStyle = useLayersStore((s) => s.setMapStyle);
 
@@ -47,9 +45,6 @@ export const LayerTogglePanel = () => {
             </Toggle>
           ))}
         </div>
-        <Toggle active={crt} onChange={toggleCrt} className="w-full">
-          CRT
-        </Toggle>
       </div>
     </Panel>
   );
