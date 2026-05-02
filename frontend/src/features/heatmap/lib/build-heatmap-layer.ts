@@ -15,15 +15,16 @@ import { useLayersStore } from "@/stores/layers";
 // blending, overlapping discs fizz out into a soft glow instead of
 // stacking as hard circles.
 const SPRITE_PX = 128;
-// Solid bright core, smooth falloff. Per-basemap alpha (see
-// heatmapBaseAlpha) keeps the additive blend from clipping while
-// still leaving the centers clearly visible.
+// Tight falloff: core stays solid through the inner half so the
+// disc reads as a real halo, with the outer ring providing the
+// "soft edge" without bleeding all the way to nothing across most
+// of the radius.
 const SOFT_DISC_SVG =
   `<svg xmlns="http://www.w3.org/2000/svg" width="${SPRITE_PX}" height="${SPRITE_PX}" viewBox="0 0 ${SPRITE_PX} ${SPRITE_PX}">` +
   `<defs><radialGradient id="g" cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" gradientUnits="userSpaceOnUse">` +
   `<stop offset="0" stop-color="#fff" stop-opacity="1"/>` +
-  `<stop offset="0.35" stop-color="#fff" stop-opacity="0.6"/>` +
-  `<stop offset="0.7" stop-color="#fff" stop-opacity="0.22"/>` +
+  `<stop offset="0.5" stop-color="#fff" stop-opacity="0.92"/>` +
+  `<stop offset="0.8" stop-color="#fff" stop-opacity="0.42"/>` +
   `<stop offset="1" stop-color="#fff" stop-opacity="0"/>` +
   `</radialGradient></defs>` +
   `<circle cx="${SPRITE_PX / 2}" cy="${SPRITE_PX / 2}" r="${SPRITE_PX / 2}" fill="url(#g)"/>` +
@@ -38,8 +39,11 @@ const SOFT_DISC = {
 
 // Per-disc alpha is sourced from heatmapBaseAlpha() which returns a
 // per-basemap value (topo gets more punch, satellite stays soft).
-const SIZE_MIN_PX = 80;
-const SIZE_MAX_PX = 280;
+// Slightly smaller min/max than before so each track reads as a
+// distinct halo rather than a soft spread that disappears into the
+// terrain.
+const SIZE_MIN_PX = 70;
+const SIZE_MAX_PX = 220;
 
 const sizeFor = (e: CotEvent): number =>
   SIZE_MIN_PX + (1 - e.confInt) * (SIZE_MAX_PX - SIZE_MIN_PX);

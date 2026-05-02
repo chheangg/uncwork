@@ -23,12 +23,12 @@ const PALETTES: Record<MapStyle, Record<LinkStatus, RGBA>> = {
   },
 };
 
-// Per-basemap alpha for the heatmap halo. Both need real punch
-// against their respective backgrounds; topo gets a bit more since
-// the lighter terrain washes out softer reds.
+// Per-basemap alpha for the heatmap halo. Both need real punch;
+// topo gets max alpha since the light terrain washes out softer
+// reds, satellite slightly less so the imagery isn't over-stained.
 const HEATMAP_ALPHA: Record<MapStyle, number> = {
-  topo: 220,
-  satellite: 175,
+  topo: 250,
+  satellite: 215,
 };
 
 let activeMapStyle: MapStyle = useLayersStore.getState().mapStyle;
