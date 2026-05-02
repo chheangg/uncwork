@@ -3,7 +3,7 @@ import { TripsLayer } from "@deck.gl/geo-layers";
 import { PathStyleExtension } from "@deck.gl/extensions";
 import type { Layer } from "@deck.gl/core";
 import { statusColor } from "@/features/links/lib/link-style";
-import type { TrackPath } from "../hooks/use-track-history";
+import type { TrackPath } from "@/lib/track-path";
 
 export const TRAIL_LENGTH_S = 30;
 
@@ -14,14 +14,14 @@ const DASH_EXTENSION = new PathStyleExtension({
 
 export const buildTrailsLayers = (
   paths: TrackPath[],
-  currentTime: number,
+  renderTime: number,
 ): Layer[] => {
   const dashedHistoryProps = {
     id: "link-trail-history",
     data: paths,
     getPath: (d: TrackPath) => d.path,
     getColor: (d: TrackPath) => {
-      const [r, g, b] = statusColor(d.status);
+      const [r, g, b] = statusColor(d.latest.status);
       return [r, g, b, 140];
     },
     widthUnits: "pixels" as const,
@@ -41,7 +41,7 @@ export const buildTrailsLayers = (
     getPath: (d) => d.path,
     getTimestamps: (d) => d.timestamps,
     getColor: (d) => {
-      const [r, g, b] = statusColor(d.status);
+      const [r, g, b] = statusColor(d.latest.status);
       return [r, g, b];
     },
     opacity: 0.95,
@@ -54,7 +54,7 @@ export const buildTrailsLayers = (
     jointRounded: true,
     fadeTrail: true,
     trailLength: TRAIL_LENGTH_S,
-    currentTime,
+    currentTime: renderTime,
   });
 
   const dashedHistory = new PathLayer<TrackPath>(

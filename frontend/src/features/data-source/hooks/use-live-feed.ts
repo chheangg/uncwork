@@ -21,6 +21,7 @@ type WireMessage = {
 const RECONNECT_DELAY_MS = 1500;
 const PRUNE_INTERVAL_MS = 2_000;
 const STALE_TRACK_MS = 8_000;
+const UPSERT_FLUSH_MS = 33;
 
 const num = (v: string | null | undefined): number | undefined => {
   if (v === null || v === undefined) return undefined;
@@ -80,9 +81,20 @@ export const useLiveFeed = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
   const pruneRef = useRef<number | null>(null);
+  const flushRef = useRef<number | null>(null);
+  const pendingRef = useRef<ReturnType<typeof toCotEvent>[]>([]);
   const cancelRef = useRef(false);
 
   useEffect(() => {
+    const flush = () => {
+      flushRef.current = null;
+      const batch = pendingRef.current.filter(
+        (x): x is NonNullable<typeof x> => x !== null,
+      );
+      pendingRef.current = [];
+      if (batch.length > 0) upsertMany(batch);
+    };
+
     const teardown = () => {
       cancelRef.current = true;
       if (wsRef.current) {
@@ -97,6 +109,11 @@ export const useLiveFeed = () => {
         window.clearInterval(pruneRef.current);
         pruneRef.current = null;
       }
+      if (flushRef.current !== null) {
+        window.clearTimeout(flushRef.current);
+        flushRef.current = null;
+      }
+      pendingRef.current = [];
     };
 
     if (source !== "live") {
@@ -114,12 +131,17 @@ export const useLiveFeed = () => {
       wsRef.current = ws;
 
       ws.addEventListener("message", (event) => {
+        let data: WireMessage;
         try {
-          const data = JSON.parse(event.data) as WireMessage;
-          const cot = toCotEvent(data);
-          if (cot) upsertMany([cot]);
+          data = JSON.parse(event.data) as WireMessage;
         } catch {
-          // drop malformed
+          return;
+        }
+        const cot = toCotEvent(data);
+        if (!cot) return;
+        pendingRef.current.push(cot);
+        if (flushRef.current === null) {
+          flushRef.current = window.setTimeout(flush, UPSERT_FLUSH_MS);
         }
       });
 

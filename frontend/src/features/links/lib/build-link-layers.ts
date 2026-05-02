@@ -1,12 +1,14 @@
 import { IconLayer, LineLayer, TextLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
-import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
+import type { Dimension, LinkStatus } from "@/types/cot";
+import type { TrackPath } from "@/lib/track-path";
+import { positionAt } from "@/lib/track-path";
 import { sensorLabel } from "@/lib/sensor";
 import type { AugmentedEvent } from "../hooks/use-affected-augment";
 import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
 
-const TRANSITION_MS = 1100;
+type Track = TrackPath<AugmentedEvent>;
 
 const ALTITUDE: Record<Dimension, number> = {
   air: 220,
@@ -18,17 +20,15 @@ const ALTITUDE: Record<Dimension, number> = {
   other: 25,
 };
 
-const elevatedPosition = (e: CotEvent): [number, number, number] => [
-  e.lon,
-  e.lat,
-  ALTITUDE[e.dimension],
-];
+const elevatedAt = (p: Track, t: number): [number, number, number] => {
+  const [lon, lat] = positionAt(p.path, p.timestamps, t);
+  return [lon, lat, ALTITUDE[p.latest.dimension]];
+};
 
-const groundPosition = (e: CotEvent): [number, number, number] => [
-  e.lon,
-  e.lat,
-  0,
-];
+const groundAt = (p: Track, t: number): [number, number, number] => {
+  const [lon, lat] = positionAt(p.path, p.timestamps, t);
+  return [lon, lat, 0];
+};
 
 const hash = (s: string): number => {
   let h = 0;
@@ -40,10 +40,10 @@ const statusAlpha = (
   status: LinkStatus,
   confInt: number,
   uid: string,
-  t: number,
+  animTime: number,
 ): number => {
   const base = 0.45 + confInt * 0.55;
-  const phase = t * 4 + (hash(uid) % 31);
+  const phase = animTime * 4 + (hash(uid) % 31);
   switch (status) {
     case "healthy":
       return base;
@@ -59,61 +59,64 @@ const statusAlpha = (
 };
 
 export const buildLinkLayers = (
-  events: AugmentedEvent[],
-  currentTime: number,
+  paths: Track[],
+  renderTime: number,
+  animTime: number,
 ): Layer[] => [
-  new LineLayer<AugmentedEvent>({
+  new LineLayer<Track>({
     id: "link-pole",
-    data: events,
+    data: paths,
     pickable: false,
     widthUnits: "pixels",
-    getSourcePosition: groundPosition,
-    getTargetPosition: elevatedPosition,
-    getColor: (e) => {
-      const [r, g, b] = statusColor(e.status);
-      return [r, g, b, Math.round(160 + e.confInt * 80)];
+    getSourcePosition: (p) => groundAt(p, renderTime),
+    getTargetPosition: (p) => elevatedAt(p, renderTime),
+    getColor: (p) => {
+      const [r, g, b] = statusColor(p.latest.status);
+      return [r, g, b, Math.round(160 + p.latest.confInt * 80)];
     },
     getWidth: 1.5,
-    transitions: {
-      getSourcePosition: { duration: TRANSITION_MS, type: "interpolation" },
-      getTargetPosition: { duration: TRANSITION_MS, type: "interpolation" },
+    updateTriggers: {
+      getSourcePosition: renderTime,
+      getTargetPosition: renderTime,
     },
   }),
-  new IconLayer<AugmentedEvent>({
+  new IconLayer<Track>({
     id: "link-icon",
-    data: events,
+    data: paths,
     pickable: true,
     sizeUnits: "pixels",
-    getPosition: elevatedPosition,
-    getIcon: (e) => iconFor(e),
-    getSize: (e) => 38 + e.confInt * 18,
-    getColor: (e) => [
+    getPosition: (p) => elevatedAt(p, renderTime),
+    getIcon: (p) => iconFor(p.latest),
+    getSize: (p) => 38 + p.latest.confInt * 18,
+    getColor: (p) => [
       255,
       255,
       255,
-      Math.round(255 * statusAlpha(e.status, e.confInt, e.uid, currentTime)),
+      Math.round(
+        255 *
+          statusAlpha(p.latest.status, p.latest.confInt, p.uid, animTime),
+      ),
     ],
     sizeMinPixels: 30,
     sizeMaxPixels: 68,
     billboard: true,
     parameters: { depthCompare: "always" },
     updateTriggers: {
-      getIcon: events.map((e) => `${e.status}|${e.recentlyAffected}`).join(","),
-      getColor: currentTime,
-    },
-    transitions: {
-      getPosition: { duration: TRANSITION_MS, type: "interpolation" },
-      getSize: { duration: TRANSITION_MS, type: "interpolation" },
+      getPosition: renderTime,
+      getIcon: paths
+        .map((p) => `${p.latest.status}|${p.latest.recentlyAffected}`)
+        .join(","),
+      getColor: animTime,
     },
   }),
-  new TextLayer<AugmentedEvent>({
+  new TextLayer<Track>({
     id: "link-label",
-    data: events,
+    data: paths,
     pickable: false,
-    getPosition: elevatedPosition,
-    getText: (e) => {
-      const id = e.callsign ?? sensorLabel(e.sensorType);
-      return `${id}  ${Math.round(e.confInt * 100)}%`;
+    getPosition: (p) => elevatedAt(p, renderTime),
+    getText: (p) => {
+      const id = p.latest.callsign ?? sensorLabel(p.latest.sensorType);
+      return `${id}  ${Math.round(p.latest.confInt * 100)}%`;
     },
     getSize: 13,
     getColor: [255, 245, 225, 245],
@@ -122,8 +125,8 @@ export const buildLinkLayers = (
     fontWeight: 700,
     background: true,
     backgroundPadding: [7, 3, 7, 3],
-    getBackgroundColor: (e) => {
-      const [r, g, b] = statusColor(e.status);
+    getBackgroundColor: (p) => {
+      const [r, g, b] = statusColor(p.latest.status);
       return [r, g, b, 220];
     },
     getBorderColor: [10, 5, 5, 255],
@@ -133,9 +136,8 @@ export const buildLinkLayers = (
     outlineColor: [0, 0, 0, 255],
     outlineWidth: 2,
     characterSet: "auto",
-    transitions: {
-      getPosition: { duration: TRANSITION_MS, type: "interpolation" },
-      getBackgroundColor: { duration: TRANSITION_MS, type: "interpolation" },
+    updateTriggers: {
+      getPosition: renderTime,
     },
   }),
 ];

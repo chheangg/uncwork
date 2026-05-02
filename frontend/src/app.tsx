@@ -29,19 +29,25 @@ import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
 import { HEATMAP_MAX_ZOOM } from "@/config/constants";
 
+// Render slightly behind real time so we always have a future
+// history sample to interpolate toward. Backend emits at 1Hz; with
+// a 1.5s buffer we have at least one fresh sample most of the time.
+const RENDER_LAG_S = 1.5;
+
 export const App = () => {
   useMockFeed();
   useLiveFeed();
   useViewportSync();
   const events = useEventStore(selectEventList);
   const augmentedEvents = useAffectedAugment(events);
+  const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
   const crt = useLayersStore((s) => s.crt);
   const zoomedOut = useViewStateStore(
     (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
   );
-  const trackPaths = useTrackHistory();
-  const currentTime = useAnimatedSeconds(33);
+  const animTime = useAnimatedSeconds(33);
+  const renderTime = animTime - RENDER_LAG_S;
 
   const heatmapActive = visible.heatmap && zoomedOut;
 
@@ -52,20 +58,15 @@ export const App = () => {
 
   const linkLayers = useMemo(
     () =>
-      visible.links ? buildLinkLayers(augmentedEvents, currentTime) : [],
-    [augmentedEvents, currentTime, visible.links],
+      visible.links
+        ? buildLinkLayers(trackPaths, renderTime, animTime)
+        : [],
+    [trackPaths, renderTime, animTime, visible.links],
   );
 
-  // Icon position has a 1.1s transition (build-link-layers.ts);
-  // delay the trail's currentTime by the same so trail head and
-  // icon move together instead of the trail leading the icon.
-  const ICON_SYNC_LAG_S = 1.1;
   const trailsLayers = useMemo(
-    () =>
-      visible.trails
-        ? buildTrailsLayers(trackPaths, currentTime - ICON_SYNC_LAG_S)
-        : [],
-    [trackPaths, currentTime, visible.trails],
+    () => (visible.trails ? buildTrailsLayers(trackPaths, renderTime) : []),
+    [trackPaths, renderTime, visible.trails],
   );
 
   const layers = useMemo<Layer[]>(() => {
