@@ -314,6 +314,17 @@ fn parse_cot(xml: &str) -> Option<CotData> {
         buf.clear();
     }
 
+    // Reject messages where lat or lon is absent or not a valid f64.
+    // Corruption can hit attribute names (e.g. "lat" → "lXt") producing
+    // a structurally valid XML document where the coordinate is simply
+    // never populated, which would otherwise serialize as JSON null and
+    // be treated as 0 by the frontend.
+    let lat_valid = data.lat.as_deref().and_then(|s| s.parse::<f64>().ok()).is_some();
+    let lon_valid = data.lon.as_deref().and_then(|s| s.parse::<f64>().ok()).is_some();
+    if !lat_valid || !lon_valid {
+        return None;
+    }
+
     Some(data)
 }
 
