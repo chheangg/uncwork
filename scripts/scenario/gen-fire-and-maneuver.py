@@ -69,16 +69,16 @@ ENDLO   = (137.0, 274.0)
 KIA_VAL = (300.0, 500.0)
 
 
-def jam_progress(t):
-    if t < T_DEGRADE_START:
-        return 0.0
-    return max(0.0, min(1.0, (t - T_DEGRADE_START) / (T_DEGRADE_END - T_DEGRADE_START)))
+# Jamming is now modelled exclusively at the wire layer (sender chaos
+# profiles). Data-side ce/le ramps and jitter are disabled -- the
+# scenario data stays clean so the visualised "comms quality" reflects
+# what the listener actually observes on the wire.
+def jam_progress(_t):
+    return 0.0
 
 
-def jam_ramp(t):
-    p = jam_progress(t)
-    return (IMM[0] + p * (ENDLO[0] - IMM[0]),
-            IMM[1] + p * (ENDLO[1] - IMM[1]))
+def jam_ramp(_t):
+    return IMM
 
 
 # Jitter: amp scales with jam_progress. Dialed down: 30m max
@@ -163,21 +163,19 @@ for i in range(FRAMES):
         t, lat, lon, 198.0, ce_b, le_b, speed_b, 130.0, rem_b))
 
     e_lat, e_lon = enemy_pos(t)
-    if t < T_DEGRADE_START:
-        ce_e, le_e = IMM; rem_e = "hostile advancing"
-    elif t < T_DISABLE:
-        ce_e, le_e = jam_ramp(t); rem_e = "hostile -- comms degrading"
-    else:
-        ce_e, le_e = ENDLO; rem_e = "hostile -- comms critical"
+    # ce/le stays clean -- jam comes from the wire, not the data.
+    ce_e, le_e = IMM
+    rem_e = "hostile advancing"
     enemy.append(event_xml("ENM-HOSTILE-01", "a-h-G-U-C", "ENEMY-1",
         t, e_lat, e_lon, 205.0, ce_e, le_e, 10.0, 250.0, rem_e))
 
+    # Jammer also uses STASH for visibility windows; ce/le stays clean.
     if t < T_DEGRADE_START:
-        lat_j, lon_j = STASH; ce_j, le_j = 280.0, 500.0; rem_j = "(hidden)"
+        lat_j, lon_j = STASH; ce_j, le_j = IMM; rem_j = "(hidden)"
     elif t <= T_IMPACT_END:
-        lat_j, lon_j = JAMMER; ce_j, le_j = 10.0, 14.0; rem_j = "EW JAMMER ACTIVE"
+        lat_j, lon_j = JAMMER; ce_j, le_j = IMM; rem_j = "EW JAMMER ACTIVE"
     else:
-        lat_j, lon_j = STASH; ce_j, le_j = 280.0, 500.0; rem_j = "(faded off)"
+        lat_j, lon_j = STASH; ce_j, le_j = IMM; rem_j = "(faded off)"
     jammer.append(event_xml("ENM-HOSTILE-02", "a-h-G-E-W-J", "JAMMER",
         t, lat_j, lon_j, 215.0, ce_j, le_j, 0.0, 0.0, rem_j))
 
@@ -185,27 +183,28 @@ for i in range(FRAMES):
     # T_HIT the missile sits at MSL_IMPACT for the debris window --
     # it does NOT track ENEMY-1's ongoing motion, so the icons don't
     # stay attached.
+    # Missile uses STASH-style positioning to hide pre-fire / post-spent
+    # (a non-jam visibility decision). When visible, ce/le is clean.
     if t < T_FIRE:
         lat_m, lon_m = STASH
-        ce_m, le_m = 280.0, 480.0
+        ce_m, le_m = IMM
         speed_m = 0.0
         rem_m = "(missile loaded)"
     elif t <= T_HIT:
         u = (t - T_FIRE) / (T_HIT - T_FIRE)
         launch = unit_pos(T_FIRE, B_START, B_END, T_DISABLE, 2.7)
         lat_m, lon_m = lerp2(launch, MSL_IMPACT, u)
-        ce_m = 70.0 + u * 50.0
-        le_m = 120.0 + u * 80.0
+        ce_m, le_m = IMM
         speed_m = 130.0
         rem_m = "MSL-1 homing on target"
     elif t <= T_IMPACT_END:
-        lat_m, lon_m = MSL_IMPACT  # FIXED -- not enemy_pos(t)
-        ce_m, le_m = 14.0, 20.0
+        lat_m, lon_m = MSL_IMPACT
+        ce_m, le_m = IMM
         speed_m = 0.0
-        rem_m = "MSL-1 IMPACT confirmed (per data)"
+        rem_m = "MSL-1 IMPACT confirmed"
     else:
         lat_m, lon_m = STASH
-        ce_m, le_m = 290.0, 480.0
+        ce_m, le_m = IMM
         speed_m = 0.0
         rem_m = "(missile spent)"
     missile.append(event_xml("FW-FRIEND-01", "a-f-A-M-F-M", "MSL-1",
