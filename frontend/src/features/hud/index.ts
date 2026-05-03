@@ -5,5 +5,5 @@ export { FooterStrip } from "./components/footer-strip";
 export {
   countByStatus,
   countStale,
-  meanConfidence,
+  meanTrust,
 } from "./lib/aggregate";

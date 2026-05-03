@@ -40,12 +40,12 @@ const hash = (s: string): number => {
 
 const statusAlpha = (
   status: LinkStatus,
-  confInt: number,
+  trustScore: number,
   uid: string,
   animTime: number,
   stale: boolean,
 ): number => {
-  const base = 0.45 + confInt * 0.55;
+  const base = 0.45 + trustScore * 0.55;
   const phase = animTime * 4 + (hash(uid) % 31);
   let alpha: number;
   switch (status) {
@@ -82,7 +82,7 @@ export const buildLinkLayers = (
     getTargetPosition: (p) => elevatedAt(p, renderTime),
     getColor: (p) => {
       const [r, g, b] = statusColor(p.latest.status);
-      return [r, g, b, Math.round(160 + p.latest.confInt * 80)];
+      return [r, g, b, Math.round(160 + p.latest.trustScore * 80)];
     },
     getWidth: 1.5,
     updateTriggers: {
@@ -98,7 +98,7 @@ export const buildLinkLayers = (
     sizeUnits: "pixels",
     getPosition: (p) => elevatedAt(p, renderTime),
     getIcon: (p) => iconFor(p.latest),
-    getSize: (p) => 38 + p.latest.confInt * 18,
+    getSize: (p) => 38 + p.latest.trustScore * 18,
     getColor: (p) => [
       255,
       255,
@@ -107,7 +107,7 @@ export const buildLinkLayers = (
         255 *
           statusAlpha(
             p.latest.status,
-            p.latest.confInt,
+            p.latest.trustScore,
             p.uid,
             animTime,
             p.latest.stale,
@@ -136,7 +136,7 @@ export const buildLinkLayers = (
     getPosition: (p) => elevatedAt(p, renderTime),
     getText: (p) => {
       const id = p.latest.callsign ?? sensorLabel(p.latest.sensorType);
-      return `${id}  ${Math.round(p.latest.confInt * 100)}%`;
+      return `${id}  ${Math.round(p.latest.trustScore * 100)}%`;
     },
     getSize: 13,
     getColor: [255, 245, 225, 245],

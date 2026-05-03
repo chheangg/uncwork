@@ -142,7 +142,7 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
             )}
           </CompactRow>
 
-          <Confidence value={e.confInt} />
+          <TrustScore value={e.trustScore} />
 
           <CompactRow label="POS">
             <div className="stat tabular-nums text-[8px]">{fmtCoord(e.lat, "lat")}</div>
@@ -277,13 +277,13 @@ const statusForConf = (c: number): LinkStatus => {
   return "offline";
 };
 
-const Confidence = ({ value }: { value: number }) => {
+const TrustScore = ({ value }: { value: number }) => {
   const pct = Math.round(value * 100);
   const [r, g, b] = statusColor(statusForConf(value));
   return (
     <div>
       <div className="flex items-baseline gap-1">
-        <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">CNF:</span>
+        <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">TRS:</span>
         <span className="stat tabular-nums text-[8px] flex-1">{pct}%</span>
       </div>
       <div className="mt-0.5 h-1 bg-terminal-border/60 relative overflow-hidden">

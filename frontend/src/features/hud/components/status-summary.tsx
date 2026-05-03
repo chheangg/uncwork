@@ -6,6 +6,7 @@ type StatusSummaryProps = {
   counts: StatusCounts;
   total: number;
   delayed: number;
+  meanTrust: number;
 };
 
 const ORDER: { key: LinkStatus; label: string; bar: string; text: string }[] = [
@@ -15,8 +16,9 @@ const ORDER: { key: LinkStatus; label: string; bar: string; text: string }[] = [
   { key: "offline", label: "OFF", bar: "bg-terminal-gray", text: "text-terminal-gray" },
 ];
 
-export const StatusSummary = ({ counts, total, delayed }: StatusSummaryProps) => {
+export const StatusSummary = ({ counts, total, delayed, meanTrust }: StatusSummaryProps) => {
   const delayedPct = total === 0 ? 0 : (delayed / total) * 100;
+  const trustPct = Math.round(meanTrust * 100);
   return (
     <Panel title="LNK STA" hint={`${total}`}>
       <ul className="space-y-0.5">
@@ -54,6 +56,18 @@ export const StatusSummary = ({ counts, total, delayed }: StatusSummaryProps) =>
           </span>
           <span className="text-terminal-amber text-[9px] font-mono tracking-tighter">
             {"█".repeat(Math.round(delayedPct / 10)) + "░".repeat(10 - Math.round(delayedPct / 10))}
+          </span>
+        </div>
+        <div className="mt-1 border-t border-terminal-border/50 pt-1 flex items-baseline justify-between gap-1">
+          <span className="text-terminal-dim font-bold tracking-widest w-8 text-[9px]">TRS</span>
+          <span className="stat text-[9px] tabular-nums flex-1 text-right">{trustPct}%</span>
+          <span className={`text-[9px] font-mono tracking-tighter ${
+            trustPct >= 60 ? "text-terminal-green" :
+            trustPct >= 30 ? "text-terminal-yellow" :
+            trustPct >= 8  ? "text-terminal-hot"   :
+                             "text-terminal-gray"
+          }`}>
+            {"█".repeat(Math.round(trustPct / 10)) + "░".repeat(10 - Math.round(trustPct / 10))}
           </span>
         </div>
       </div>

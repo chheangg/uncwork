@@ -67,9 +67,18 @@ const NO_CHAOS: ChaosConfig = ChaosConfig {
     burst_max: 3,
 };
 
+const HEAVY_JAM: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.45,
+    duplicate_threshold: 0.55,
+    corrupt_threshold: 0.65,
+    reorder_threshold: 0.72,
+    burst_probability: 0.08,
+    burst_max: 5,
+};
+
 const UNIT_A_CHAOS: ChaosConfig = NO_CHAOS;
 const UNIT_B_CHAOS: ChaosConfig = NO_CHAOS;
-const UNIT_C_CHAOS: ChaosConfig = NO_CHAOS;
+const UNIT_C_CHAOS: ChaosConfig = HEAVY_JAM;
 
 #[derive(Clone, Copy)]
 struct ChaosConfig {
