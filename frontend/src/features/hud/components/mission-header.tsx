@@ -31,7 +31,7 @@ const Brand = () => (
   <div className="flex items-center gap-1.5 px-2">
     <div className="h-1.5 w-1.5 rounded-full bg-terminal-accent shadow-glow animate-blink" />
     <span className="font-bold text-terminal-accent tracking-[0.2em] text-[10px]">
-      UNCWORK//C2
+      HAMILTON//C2
     </span>
   </div>
 );
