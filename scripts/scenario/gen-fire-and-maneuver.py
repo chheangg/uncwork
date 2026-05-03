@@ -4,15 +4,18 @@ import os
 OUT = "/Users/macbookair/repos/uncwork"
 
 TICK_S = 0.5
-DURATION_S = 60.0
+DURATION_S = 90.0
 FRAMES = int(DURATION_S / TICK_S)
 
 T_DEGRADE_START = 15.0
-T_DEGRADE_END   = 50.0
+T_DEGRADE_END   = 75.0
 T_FIRE          = 35.0
 T_HIT           = 42.0
 T_IMPACT_END    = 47.0
-T_DISABLE       = 50.0
+# TEAM-A and TEAM-B keep advancing until T_DISABLE, then freeze in
+# place and emit "KIA" remarks for the rest of DURATION_S so the loop
+# end shows them clearly disabled before the sender wrap reset fires.
+T_DISABLE       = 75.0
 
 A_START = (48.4640, 37.0010)
 A_END   = (48.4654, 37.0075)
