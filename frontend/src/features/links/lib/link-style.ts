@@ -23,11 +23,12 @@ const PALETTES: Record<MapStyle, Record<LinkStatus, RGBA>> = {
   },
 };
 
-// Per-basemap alpha for the heatmap halo. Both need real punch;
-// topo gets max alpha since the light terrain washes out softer
-// reds, satellite slightly less so the imagery isn't over-stained.
+// Per-basemap alpha for the heatmap halo. Satellite stays at full
+// punch (the dark imagery already mutes the disc). Topo is heavily
+// translucent so the halos don't completely paint over the light
+// terrain, leaving roads and labels readable underneath.
 const HEATMAP_ALPHA: Record<MapStyle, number> = {
-  topo: 250,
+  topo: 110,
   satellite: 215,
 };
 
