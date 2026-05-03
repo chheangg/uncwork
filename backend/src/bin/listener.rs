@@ -30,58 +30,6 @@ const DECAY_RATE_PER_SEC: f64 = 0.97;
 const NEIGHBOR_RADIUS_MILES: f64 = 5.0;
 const NEIGHBOR_INFLUENCE: f64 = 0.5;
 
-// UID consolidation: a single-byte corruption from sender chaos flips
-// one byte to 'X', producing a UID that's Hamming-1 from the original
-// without changing length. We keep a per-source frequency table and
-// remap incoming UIDs to a same-source UID that is (a) Hamming-1, (b)
-// has been seen at least UID_STABLE_COUNT times, and (c) was seen
-// within UID_TTL_SECS. Anything else is treated as a legitimately new
-// UID.
-const UID_STABLE_COUNT: u32 = 3;
-const UID_TTL_SECS: u64 = 30;
-
-struct UidStat {
-    count: u32,
-    last_seen: Instant,
-}
-
-// Returns the byte-wise Hamming distance for equal-length ASCII
-// strings, or None when the lengths differ. UIDs in this codebase are
-// ASCII, so byte-wise comparison is equivalent to char-wise.
-fn hamming_eq_length(a: &str, b: &str) -> Option<usize> {
-    if a.len() != b.len() {
-        return None;
-    }
-    Some(a.bytes().zip(b.bytes()).filter(|(x, y)| x != y).count())
-}
-
-// Find a stable canonical UID from the same source that's a single
-// byte off from `incoming`. Returns None when there's an exact match
-// (no remap needed) or when no stable neighbour exists.
-fn resolve_canonical(known: &HashMap<String, UidStat>, incoming: &str) -> Option<String> {
-    if known.contains_key(incoming) {
-        return None;
-    }
-    let mut best: Option<(&String, u32)> = None;
-    for (uid, stat) in known.iter() {
-        if stat.count < UID_STABLE_COUNT {
-            continue;
-        }
-        if hamming_eq_length(uid, incoming) == Some(1) {
-            let cand = (uid, stat.count);
-            best = match best {
-                Some((_, c)) if c >= cand.1 => best,
-                _ => Some(cand),
-            };
-        }
-    }
-    best.map(|(uid, _)| uid.clone())
-}
-
-fn purge_stale_uids(known: &mut HashMap<String, UidStat>) {
-    known.retain(|_, stat| stat.last_seen.elapsed().as_secs() < UID_TTL_SECS);
-}
-
 struct TrustState {
     score: f64,
     last_event: Instant,
@@ -225,9 +173,6 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
     let mut seen_frames: HashSet<(String, String)> = HashSet::new();
     // Per-sender sequence counters (unit_a and unit_b each have independent seqs)
     let mut next_seq: HashMap<String, u64> = HashMap::new();
-    // Per-source UID frequency table, used to remap chaos-corrupted
-    // UIDs back to their canonical track.
-    let mut known_uids: HashMap<String, HashMap<String, UidStat>> = HashMap::new();
 
     loop {
         let (amt, src) = socket.recv_from(&mut buf).await?;
@@ -250,29 +195,8 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
         }
 
         match parse_cot(&xml) {
-            Some(mut data) => {
-                let mut uid = data.uid.clone().unwrap_or_default();
-
-                // Try to remap a chaos-corrupted UID back to its
-                // canonical neighbour from the same source before
-                // doing anything else with it (dedup, sequence
-                // tracking, broadcast).
-                let known_for_src = known_uids.entry(src_str.clone()).or_default();
-                purge_stale_uids(known_for_src);
-                if let Some(canonical) = resolve_canonical(known_for_src, &uid) {
-                    println!(
-                        "REMAP corrupt uid {} -> {} (src={})",
-                        uid, canonical, src_str
-                    );
-                    uid = canonical;
-                    data.uid = Some(uid.clone());
-                }
-                let stat = known_for_src
-                    .entry(uid.clone())
-                    .or_insert(UidStat { count: 0, last_seen: Instant::now() });
-                stat.count = stat.count.saturating_add(1);
-                stat.last_seen = Instant::now();
-
+            Some(data) => {
+                let uid = data.uid.clone().unwrap_or_default();
                 let time_key = data.time.clone().unwrap_or_default();
                 let frame_key = (uid.clone(), time_key);
 
