@@ -29,6 +29,13 @@ const STATUS_TEXT: Record<LinkStatus, string> = {
   offline: "text-terminal-gray",
 };
 
+const STATUS_LABEL: Record<LinkStatus, string> = {
+  healthy: "HEALTHY",
+  degraded: "DEGRADED",
+  critical: "CRITICAL",
+  offline: "OFFLINE",
+};
+
 const haversineMeters = (
   a: [number, number],
   b: [number, number],
@@ -103,7 +110,7 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
         <header className="flex items-center justify-between border-b border-terminal-accent/40 px-2 py-1 h-6">
           <div className="flex items-center gap-1.5">
             <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-terminal-accent" />
-            <span className="label text-terminal-accent text-[9px]">TEL</span>
+            <span className="label text-terminal-accent text-[9px]">TELEMETRY</span>
           </div>
           <button
             type="button"
@@ -123,16 +130,16 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
             <div className="text-terminal-dim text-[8px] truncate font-mono">{e.uid.slice(0, 16)}</div>
           </div>
 
-          <CompactRow label="STA">
+          <CompactRow label="STATUS">
             <span className={`stat ${STATUS_TEXT[statusKey]} uppercase font-bold`}>
-              {statusKey.slice(0, 3).toUpperCase()}
+              {STATUS_LABEL[statusKey]}
             </span>
             {e.recentlyAffected && (
-              <span className="ml-1 text-terminal-green text-[8px]">[RCV]</span>
+              <span className="ml-1 text-terminal-green text-[8px]">[RECOVERED]</span>
             )}
           </CompactRow>
 
-          <CompactRow label="DEL">
+          <CompactRow label="DELIVERY">
             {e.stale ? (
               <span className="stat text-terminal-amber animate-blink font-bold">
                 STALE
@@ -144,7 +151,7 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
 
           <TrustScore value={e.trustScore} />
 
-          <CompactRow label="POS">
+          <CompactRow label="POSITION">
             <div className="stat tabular-nums text-[8px]">{fmtCoord(e.lat, "lat")}</div>
             <div className="stat tabular-nums text-[8px]">{fmtCoord(e.lon, "lon")}</div>
           </CompactRow>
@@ -162,18 +169,16 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
             </CompactRow>
           </div>
 
-          <div className="grid grid-cols-2 gap-1">
-            <CompactRow label="SNS">
-              <span className="stat text-[8px] uppercase">{e.sensorType.slice(0, 3)}</span>
-            </CompactRow>
-            <CompactRow label="DIM">
-              <span className="stat text-[8px] uppercase">
-                {DIMENSION_LABEL[e.dimension]?.slice(0, 3) ?? e.dimension.slice(0, 3)}
-              </span>
-            </CompactRow>
-          </div>
+          <CompactRow label="SENSOR">
+            <span className="stat text-[8px] uppercase">{e.sensorType}</span>
+          </CompactRow>
+          <CompactRow label="DOMAIN">
+            <span className="stat text-[8px] uppercase">
+              {DIMENSION_LABEL[e.dimension] ?? e.dimension}
+            </span>
+          </CompactRow>
 
-          <CompactRow label="UPD">
+          <CompactRow label="UPDATED">
             <span className="stat text-[8px]">
               {fmtSecondsAgo(Date.parse(e.time))}
             </span>
@@ -183,9 +188,9 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
 
           {stats && (
             <div className="grid grid-cols-3 gap-1 border-t border-terminal-border/60 pt-1">
-              <CompactStat label="PTS" value={stats.points.toString()} />
+              <CompactStat label="POINTS" value={stats.points.toString()} />
               <CompactStat
-                label="DST"
+                label="DIST"
                 value={
                   stats.distanceM < 1000
                     ? `${stats.distanceM.toFixed(0)}m`
@@ -193,7 +198,7 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
                 }
               />
               <CompactStat
-                label="ΔS"
+                label="ΔSTATE"
                 value={stats.statusChanges.toString()}
               />
             </div>
@@ -244,7 +249,7 @@ const ActionRow = ({
         }
         className="border border-terminal-accent/70 bg-terminal-panel/80 px-1 py-1 text-[9px] tracking-widest text-terminal-accent hover:bg-terminal-accent/15 font-bold"
       >
-        [ESC]
+        [ESCALATE]
       </button>
     </div>
   );
@@ -258,7 +263,7 @@ const CompactRow = ({
   children: React.ReactNode;
 }) => (
   <div className="flex items-baseline gap-1">
-    <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">{label}:</span>
+    <span className="text-[8px] uppercase tracking-widest text-terminal-dim shrink-0 w-[58px]">{label}:</span>
     <div className="flex-1">{children}</div>
   </div>
 );
@@ -283,7 +288,7 @@ const TrustScore = ({ value }: { value: number }) => {
   return (
     <div>
       <div className="flex items-baseline gap-1">
-        <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">TRS:</span>
+        <span className="text-[8px] uppercase tracking-widest text-terminal-dim shrink-0 w-[58px]">TRUST:</span>
         <span className="stat tabular-nums text-[8px] flex-1">{pct}%</span>
       </div>
       <div className="mt-0.5 h-1 bg-terminal-border/60 relative overflow-hidden">
@@ -336,7 +341,7 @@ const StatusWindow = ({
   return (
     <div>
       <div className="flex items-baseline gap-1 mb-0.5">
-        <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">WIN:</span>
+        <span className="text-[8px] uppercase tracking-widest text-terminal-dim shrink-0 w-[58px]">WINDOW:</span>
         <span className="text-terminal-dim text-[8px] flex-1">
           {track.timestamps.length} samples
         </span>
