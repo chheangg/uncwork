@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { useEventStore } from "@/stores/events";
-import { useDataSourceStore } from "@/stores/data-source";
 import { useLogStore } from "@/stores/log";
 import type { CotEvent } from "@/types/cot";
 
@@ -88,10 +87,6 @@ const diffEmit = (
   }
 };
 
-// Subscribes (outside React render) to the event store + data
-// source store and writes derived transition entries into the log
-// store. Single source of truth: every line in the terminal traces
-// back to a real change in the event stream.
 export const useDerivedLog = (): void => {
   const startedRef = useRef(false);
   useEffect(() => {
@@ -99,9 +94,7 @@ export const useDerivedLog = (): void => {
     startedRef.current = true;
 
     const append = useLogStore.getState().append;
-
     let prevEvents = useEventStore.getState().events;
-    let prevSource = useDataSourceStore.getState().source;
 
     const unsubEvents = useEventStore.subscribe((state) => {
       const curr = state.events;
@@ -110,20 +103,8 @@ export const useDerivedLog = (): void => {
       diffEmit(prev, curr, append);
     });
 
-    const unsubSource = useDataSourceStore.subscribe((state) => {
-      const curr = state.source;
-      if (curr === prevSource) return;
-      append({
-        kind: "system",
-        summary: `Data source: ${prevSource.toUpperCase()} → ${curr.toUpperCase()}`,
-        payload: { from: prevSource, to: curr },
-      });
-      prevSource = curr;
-    });
-
     return () => {
       unsubEvents();
-      unsubSource();
       startedRef.current = false;
     };
   }, []);

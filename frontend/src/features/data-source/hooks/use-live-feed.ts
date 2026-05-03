@@ -2,12 +2,11 @@ import { useEffect, useRef } from "react";
 import { wsUrl } from "@/config/env";
 import { enrichCot } from "@/lib/cot";
 import type { SensorType } from "@/types/cot";
-import { useDataSourceStore } from "@/stores/data-source";
 import { useEventStore } from "@/stores/events";
-import { useReplayStore } from "@/stores/replay";
 
 type WireMessage = {
   uid?: string | null;
+  cot_type?: string | null;
   time?: string | null;
   start?: string | null;
   stale?: string | null;
@@ -17,6 +16,9 @@ type WireMessage = {
   flight_number?: string | null;
   remarks?: string | null;
   source?: string | null;
+  trust_score?: number | null;
+  sensor_lat?: number | null;
+  sensor_lon?: number | null;
 };
 
 const RECONNECT_DELAY_MS = 1500;
@@ -28,22 +30,10 @@ const num = (v: string | null | undefined): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-const ADSB_SENSOR: SensorType = "adsb";
-const FRIENDLY_AIR_COT = "a-f-A-C-F";
+const DEFAULT_SENSOR: SensorType = "adsb";
+const DEFAULT_COT_TYPE = "a-f-A-C-F";
 
-// Sender emits uids in the form "unit_<x>-ICAO-<6 hex>". Anything
-// that doesn't fit the exact pattern was corrupted in flight by the
-// chaos pipeline (e.g. byte flip turning "ICAO-" into "IXAO-") and
-// would otherwise become a phantom track. Drop it.
-const UID_PATTERN = /^unit_[a-z0-9]+-ICAO-[a-fA-F0-9]{6}$/;
-const CANONICAL_PREFIX = /^unit_[a-z0-9]+-/;
-
-const canonicalUid = (raw: string): string | null => {
-  if (!UID_PATTERN.test(raw)) return null;
-  return raw.replace(CANONICAL_PREFIX, "");
-};
-
-const cleanCallsign = (raw: string | null | undefined): string | undefined => {
+const cleanString = (raw: string | null | undefined): string | undefined => {
   if (!raw) return undefined;
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : undefined;
@@ -51,32 +41,29 @@ const cleanCallsign = (raw: string | null | undefined): string | undefined => {
 
 const toCotEvent = (m: WireMessage) => {
   if (!m.uid) return null;
-  const canon = canonicalUid(m.uid);
-  if (!canon) return null;
+  const uid = m.uid.trim();
+  if (!uid) return null;
   const lat = num(m.lat);
   const lon = num(m.lon);
   if (lat === undefined || lon === undefined) return null;
   const now = new Date().toISOString();
   return enrichCot({
-    uid: canon,
-    cotType: FRIENDLY_AIR_COT,
-    sensorType: ADSB_SENSOR,
+    uid,
+    cotType: m.cot_type ?? DEFAULT_COT_TYPE,
+    sensorType: DEFAULT_SENSOR,
     time: m.time ?? now,
     start: m.start ?? now,
     staleAt: m.stale ?? new Date(Date.now() + 60_000).toISOString(),
     lat,
     lon,
     hae: num(m.hae),
-    callsign: cleanCallsign(m.flight_number),
-    remarks: m.remarks ?? undefined,
+    callsign: cleanString(m.flight_number),
+    remarks: cleanString(m.remarks),
   });
 };
 
 export const useLiveFeed = () => {
-  const source = useDataSourceStore((s) => s.source);
-  const mode = useReplayStore((s) => s.mode);
   const upsertMany = useEventStore((s) => s.upsertMany);
-  const clear = useEventStore((s) => s.clear);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
   const flushRef = useRef<number | null>(null);
@@ -109,18 +96,6 @@ export const useLiveFeed = () => {
       }
       pendingRef.current = [];
     };
-
-    // Don't run live feed in replay mode
-    if (mode === "replay") {
-      teardown();
-      return;
-    }
-
-    if (source !== "live") {
-      teardown();
-      clear();
-      return;
-    }
 
     cancelRef.current = false;
 
@@ -159,5 +134,5 @@ export const useLiveFeed = () => {
     connect();
 
     return teardown;
-  }, [source, upsertMany, clear]);
+  }, [upsertMany]);
 };

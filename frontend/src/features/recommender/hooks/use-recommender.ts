@@ -52,3 +52,5 @@ export const useRecommender = (
 
   return rec;
 };
+
+export type { Recommendation };

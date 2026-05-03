@@ -70,10 +70,6 @@ export const EventTerminal = () => {
     return set;
   }, [activeKindKeys]);
 
-  // Per-uid count is filtered by the active KIND set, so flipping a
-  // kind off narrows the TRACK dropdown to only uids that have
-  // matching entries left -- you can't pick a "ghost" track that's
-  // been filtered to zero.
   const uidCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of entries) {

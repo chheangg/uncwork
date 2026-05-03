@@ -80,6 +80,7 @@ struct SenderResponse {
 #[derive(Clone, Serialize)]
 struct CotMessage {
     uid: Option<String>,
+    cot_type: Option<String>,
     time: Option<String>,
     start: Option<String>,
     stale: Option<String>,
@@ -261,6 +262,7 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
 
                 let cot_msg = CotMessage {
                     uid: data.uid,
+                    cot_type: data.cot_type,
                     time: data.time,
                     start: data.start,
                     stale: data.stale,
@@ -408,6 +410,7 @@ fn parse_seq_from_remarks(remarks: &str) -> Option<u64> {
 #[derive(Default)]
 struct CotData {
     uid: Option<String>,
+    cot_type: Option<String>,
     time: Option<String>,
     start: Option<String>,
     stale: Option<String>,
@@ -441,6 +444,7 @@ fn parse_cot(xml: &str) -> Option<CotData> {
 
                         match key.as_ref() {
                             "uid" => data.uid = Some(val),
+                            "type" => data.cot_type = Some(val),
                             "time" => data.time = Some(val),
                             "start" => data.start = Some(val),
                             "stale" => data.stale = Some(val),
