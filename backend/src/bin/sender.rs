@@ -378,10 +378,15 @@ fn run_sender(
 
             if let Some(ref files) = ndxml_files {
                 // NDXML mode: emit one message per file per tick, all files advance in parallel.
+                // Lines starting with "<!--" are skip markers: cursor advances but no UDP send,
+                // so a track can be silently absent for part of the loop (e.g. MSL-1 pre-fire).
                 for (file_msgs, idx) in files.iter().zip(ndxml_indices.iter_mut()) {
-                    seq += 1;
                     let raw = &file_msgs[*idx % file_msgs.len()];
                     *idx += 1;
+                    if raw.trim_start().starts_with("<!--") {
+                        continue;
+                    }
+                    seq += 1;
                     queue.push_back(inject_ndxml(raw, seq, unit, sensor_lat, sensor_lon));
                 }
             } else {
