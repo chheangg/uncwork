@@ -1,7 +1,7 @@
 export const PRESET_VIEW = {
-  longitude: 30.5234,
-  latitude: 50.4501,
-  zoom: 12.2,
+  longitude: 37.025,
+  latitude: 48.465,
+  zoom: 12.5,
   pitch: 60,
   bearing: -18,
   minZoom: 8,
@@ -9,10 +9,10 @@ export const PRESET_VIEW = {
 } as const;
 
 export const PRESET_BBOX = {
-  west: 30.35,
-  south: 50.34,
-  east: 30.7,
-  north: 50.56,
+  west: 36.85,
+  south: 48.37,
+  east: 37.20,
+  north: 48.56,
 } as const;
 
 export const MISSION = {
