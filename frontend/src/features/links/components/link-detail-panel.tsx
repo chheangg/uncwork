@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from "react";
-import type { CotEvent, LinkStatus } from "@/types/cot";
+import type { CotEvent, Detectors, LinkStatus } from "@/types/cot";
 import type { TrackPath } from "@/lib/track-path";
 import { TRAIL_FADE_S } from "@/features/trails";
 import { useLogStore } from "@/stores/log";
 import { statusColor } from "../lib/link-style";
+import { fingerprintTone } from "@/features/attribution";
 import type { AugmentedEvent } from "../hooks/use-affected-augment";
 
 type Props = {
@@ -184,6 +185,8 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
             </span>
           </CompactRow>
 
+          {e.detectors && <DetectorChips detectors={e.detectors} />}
+
           <StatusWindow track={track} />
 
           {stats && (
@@ -274,6 +277,112 @@ const CompactStat = ({ label, value }: { label: string; value: string }) => (
     <div className="stat tabular-nums text-[8px]">{value}</div>
   </div>
 );
+
+/**
+ * **FR-01..04 chips.** Renders each active detector as a labeled chip.
+ * Status row at top (FR-01..03), then a fingerprint block (FR-04) with
+ * the catalog match name, confidence percent, and source citation. The
+ * "ATTRIBUTED" framing is intentional — the listener classifies wire
+ * shape against the public catalog, it does not measure RF.
+ */
+const DetectorChips = ({ detectors }: { detectors: Detectors }) => {
+  const { temporalAnomaly, crcPct60s, crcBreach, spatialClass, fingerprint } = detectors;
+  const hasStatusChip =
+    temporalAnomaly || crcBreach || spatialClass !== "clear";
+
+  if (!hasStatusChip && !fingerprint) return null;
+
+  return (
+    <div className="border-t border-terminal-border/60 pt-1">
+      <div className="text-[8px] uppercase tracking-widest text-terminal-dim mb-1">
+        DETECTORS
+      </div>
+      {hasStatusChip && (
+        <div className="flex flex-wrap gap-1 mb-1">
+          {temporalAnomaly && (
+            <Chip kind="warn" label="FR-01 ANOMALY" />
+          )}
+          {crcBreach && (
+            <Chip kind="warn" label={`FR-02 CRC ${(crcPct60s * 100).toFixed(1)}%`} />
+          )}
+          {spatialClass === "localized" && (
+            <Chip kind="warn" label="FR-03 LOCALIZED" />
+          )}
+          {spatialClass === "blanket" && (
+            <Chip kind="hot" label="FR-03 BLANKET" />
+          )}
+        </div>
+      )}
+      {fingerprint && <FingerprintBlock fingerprint={fingerprint} />}
+    </div>
+  );
+};
+
+const Chip = ({
+  kind,
+  label,
+}: {
+  kind: "warn" | "hot";
+  label: string;
+}) => {
+  const cls =
+    kind === "hot"
+      ? "border-terminal-hot/70 text-terminal-hot bg-terminal-hot/10"
+      : "border-terminal-amber/70 text-terminal-amber bg-terminal-amber/10";
+  return (
+    <span
+      className={`inline-block border px-1 py-px text-[8px] tracking-widest font-bold ${cls}`}
+    >
+      {label}
+    </span>
+  );
+};
+
+const FingerprintBlock = ({
+  fingerprint,
+}: {
+  fingerprint: NonNullable<Detectors["fingerprint"]>;
+}) => {
+  const tone = fingerprintTone(fingerprint.confidence);
+  const pct = Math.round(fingerprint.confidence * 100);
+  return (
+    <div className="border border-terminal-border/60 bg-terminal-panel/60 px-1 py-1">
+      <div className="flex items-center justify-between mb-0.5">
+        <span
+          className="stat text-[9px] font-bold uppercase tracking-wider"
+          style={{ color: tone.hex }}
+        >
+          FR-04 {fingerprint.tag.toUpperCase()}
+        </span>
+        <span
+          className="text-[8px] font-bold tabular-nums"
+          style={{ color: tone.hex }}
+        >
+          {pct}% {tone.label}
+        </span>
+      </div>
+      <div className="text-[8px] text-terminal-fg leading-tight mb-0.5">
+        {fingerprint.name}
+      </div>
+      {fingerprint.primaryEffect && (
+        <div className="text-[8px] text-terminal-dim italic leading-tight mb-0.5">
+          {fingerprint.primaryEffect}
+        </div>
+      )}
+      {fingerprint.matchedSignals.length > 0 && (
+        <div className="text-[8px] text-terminal-dim leading-tight mb-0.5">
+          matched: {fingerprint.matchedSignals.join(", ")}
+        </div>
+      )}
+      <div className="text-[8px] text-terminal-dim leading-tight truncate">
+        src: {fingerprint.source}
+      </div>
+      <div className="text-[7px] text-terminal-dim italic mt-0.5 leading-tight">
+        ATTRIBUTED from wire shape — not RF observation.
+      </div>
+    </div>
+  );
+};
 
 const statusForConf = (c: number): LinkStatus => {
   if (c >= 0.6) return "healthy";

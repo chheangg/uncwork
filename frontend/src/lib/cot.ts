@@ -1,4 +1,16 @@
-import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
+import type { CotEvent, Detectors, Dimension, LinkStatus } from "@/types/cot";
+
+const UNIT_REGEX = /\bunit=([a-z0-9_]+)/i;
+
+/**
+ * Pull the `unit=<id>` token out of a CoT `<remarks>` body. Returns
+ * `undefined` when the token isn't present (mock feed, OpenSky frames).
+ */
+export const parseSenderUnit = (remarks: string | undefined): string | undefined => {
+  if (!remarks) return undefined;
+  const match = UNIT_REGEX.exec(remarks);
+  return match?.[1]?.toLowerCase();
+};
 
 const DIMENSION_MAP: Record<string, Dimension> = {
   A: "air",
@@ -44,6 +56,10 @@ type RawCot = {
   remarks?: string;
   callsign?: string;
   trustScore?: number;
+  senderUnit?: string;
+  sensorLat?: number;
+  sensorLon?: number;
+  detectors?: Detectors;
 };
 
 export const enrichCot = (raw: RawCot): CotEvent => {

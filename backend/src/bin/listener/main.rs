@@ -36,6 +36,7 @@
 //! live trail.
 
 mod fingerprint;
+mod signals;
 mod trust;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -62,7 +63,8 @@ use trust::{
     SenderPosition, SpatialClass, TrustState, classify_spatial, compute_effective_trust,
 };
 
-use fingerprint::Fingerprint;
+use fingerprint::{FingerprintMatch, SignalContext};
+use signals::{SignalCounters, SignalEvent};
 
 #[derive(Clone, Serialize)]
 struct SenderInfo {
@@ -109,10 +111,12 @@ struct Detectors {
     /// **FR-03** — `clear` | `localized` | `blanket` based on the trust
     /// topology around this sender. See `trust::SpatialClass`.
     spatial_class: SpatialClass,
-    /// **FR-04** — matched fingerprint (catalog entry) when the CoT
-    /// `<remarks>` carry a `threat=<tag>` token. `None` for clean traffic.
+    /// **FR-04** — top-scoring catalog entry whose signature matches this
+    /// sender's observed wire-shape. Includes a confidence in 0.0..1.0 and
+    /// the list of axes that contributed. `None` for clean traffic and for
+    /// degraded traffic that doesn't resemble any catalog signature.
     #[serde(skip_serializing_if = "Option::is_none")]
-    fingerprint: Option<Fingerprint>,
+    fingerprint: Option<FingerprintMatch>,
 }
 
 impl Default for Detectors {
@@ -166,6 +170,11 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 struct AppState {
     senders: RwLock<HashMap<String, SenderInfo>>,
     trust: RwLock<HashMap<String, TrustState>>,
+    /// **FR-04 input.** Per-sender rolling counters of drop / dup / reorder
+    /// / clean events used by the fingerprint classifier. Sibling of
+    /// `trust` (which holds CRC + IAT state) — kept separate so the
+    /// classifier's signal model evolves independently of trust scoring.
+    signals: RwLock<HashMap<String, SignalCounters>>,
     cot_tx: broadcast::Sender<CotMessage>,
     viewport: RwLock<Viewport>,
     /// FR-03 neighbor radius in meters. Read once at startup from
@@ -192,6 +201,7 @@ async fn main() -> std::io::Result<()> {
     let state = Arc::new(AppState {
         senders: RwLock::new(HashMap::new()),
         trust: RwLock::new(HashMap::new()),
+        signals: RwLock::new(HashMap::new()),
         cot_tx,
         viewport: RwLock::new(DEFAULT_VIEWPORT),
         neighbor_radius_m,
@@ -276,16 +286,24 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     // Dedup is keyed by (uid, time) so legitimate position
                     // updates pass through; only retransmits of the exact
                     // same frame land here. Feeds QUALITY_DUPLICATE into
-                    // the EMA — contributes to FR-02 stability indirectly
-                    // via the score, separate from the rolling CRC% rate.
+                    // the EMA and a SignalEvent::Duplicated into the
+                    // FR-04 counters.
                     println!("DUPLICATE suppressed: {}\n", uid);
+                    let now = Instant::now();
                     state
                         .trust
                         .write()
                         .await
                         .entry(src_str.clone())
                         .or_insert_with(TrustState::new)
-                        .record(QUALITY_DUPLICATE);
+                        .record_at(QUALITY_DUPLICATE, now);
+                    state
+                        .signals
+                        .write()
+                        .await
+                        .entry(src_str.clone())
+                        .or_insert_with(SignalCounters::new)
+                        .observe(now, SignalEvent::Duplicated);
                     continue;
                 }
                 seen_frames.insert(frame_key);
@@ -302,23 +320,10 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     }
                 }
 
-                // FR-04 — catalog match on scenario `threat=<tag>` token.
-                // Resolved before trust update so we can fold the
-                // QUALITY_FINGERPRINT_MATCH penalty into the same EMA pass.
-                let fingerprint_match: Option<&'static Fingerprint> = data
-                    .remarks
-                    .as_deref()
-                    .and_then(fingerprint::parse_threat_tag)
-                    .and_then(fingerprint::lookup_by_tag);
-                if let Some(fp) = fingerprint_match {
-                    println!(
-                        "FR-04 FINGERPRINT MATCH: {} (tag {}) on {} — source: {}",
-                        fp.name, fp.tag, src_str, fp.source
-                    );
-                }
-
                 // Sequence tracking + FR-01 IAT anomaly + FR-02 CRC rate
-                // + FR-04 fingerprint penalty + EMA update.
+                // + EMA update. Signal events (drop / dup / reorder /
+                // clean) feed the FR-04 classifier via SignalCounters
+                // alongside the EMA.
                 //
                 // Sequence gaps and reorders are *adjacent* to FR-01
                 // (temporal anomaly) but distinct: FR-01 is IAT-stat-based
@@ -326,11 +331,12 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                 // seq-tracking sees explicit packet-loss / mis-order on the
                 // wire. Both feed the EMA so the trust score reflects
                 // either kind of degradation.
-                let (temporal_anomaly, crc_pct_60s, crc_breach) = {
+                let (temporal_anomaly, crc_pct_60s, crc_breach, signal_events) = {
                     let now = Instant::now();
                     let mut trust = state.trust.write().await;
                     let t = trust.entry(src_str.clone()).or_insert_with(TrustState::new);
                     let expected = next_seq.entry(src_str.clone()).or_insert(1);
+                    let mut events: Vec<(SignalEvent, usize)> = Vec::new();
 
                     // FR-02 — register this clean-parse event in the
                     // rolling CRC window. Corrupt events are registered on
@@ -362,13 +368,6 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                         t.record_at(QUALITY_TEMPORAL_ANOMALY, now);
                     }
 
-                    // FR-04 — pull the score toward QUALITY_FINGERPRINT_MATCH
-                    // every time a known-jammer signature is on the wire.
-                    // The EMA decay handles cool-down naturally.
-                    if fingerprint_match.is_some() {
-                        t.record_at(QUALITY_FINGERPRINT_MATCH, now);
-                    }
-
                     match data.remarks.as_deref().and_then(parse_seq_from_remarks) {
                         Some(seq) if seq < *expected => {
                             println!(
@@ -377,6 +376,7 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                                 *expected - 1
                             );
                             t.record_at(QUALITY_OUT_OF_ORDER, now);
+                            events.push((SignalEvent::Reordered, 1));
                         }
                         Some(seq) if seq > *expected => {
                             let dropped = seq - *expected;
@@ -391,17 +391,41 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                             }
                             t.record_at(QUALITY_CLEAN, now);
                             *expected = seq + 1;
+                            events.push((SignalEvent::Dropped, dropped as usize));
+                            events.push((SignalEvent::Clean, 1));
                         }
                         Some(seq) => {
                             t.record_at(QUALITY_CLEAN, now);
                             *expected = seq + 1;
+                            events.push((SignalEvent::Clean, 1));
                         }
                         None => {
                             t.record_at(QUALITY_CLEAN, now);
+                            events.push((SignalEvent::Clean, 1));
                         }
                     }
 
-                    (anomalous, crc_pct, breached)
+                    (anomalous, crc_pct, breached, events)
+                };
+
+                // Push the per-frame signal events into the per-sender
+                // rolling counters. Held under the signals lock only.
+                let signal_snapshot = {
+                    let now = Instant::now();
+                    let mut signals = state.signals.write().await;
+                    let counters = signals
+                        .entry(src_str.clone())
+                        .or_insert_with(SignalCounters::new);
+                    for (event, n) in &signal_events {
+                        if *event == SignalEvent::Dropped && *n > 1 {
+                            counters.observe_drops(now, *n);
+                        } else {
+                            for _ in 0..*n {
+                                counters.observe(now, *event);
+                            }
+                        }
+                    }
+                    counters.snapshot(now)
                 };
 
                 // Compute effective trust: raw EMA pulled down by nearby
@@ -427,6 +451,41 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     println!("FR-03 SPATIAL: {:?} on {}", spatial_class, src_str);
                 }
 
+                // FR-04 — signature classifier. Builds a SignalContext
+                // from the rolling rates (drop / dup / reorder), the
+                // FR-02 CRC %, the FR-03 spatial class, and the FR-01
+                // anomaly flag, then asks the catalog whether any entry's
+                // signature credibly fits. None until the signal window
+                // accumulates SIGNAL_MIN_SAMPLES events.
+                let fingerprint_match: Option<FingerprintMatch> =
+                    signal_snapshot.as_ref().and_then(|snap| {
+                        let ctx = SignalContext::from_parts(
+                            snap,
+                            crc_pct_60s,
+                            spatial_class,
+                            temporal_anomaly,
+                        );
+                        fingerprint::classify(&ctx)
+                    });
+
+                if let Some(fp) = &fingerprint_match {
+                    println!(
+                        "FR-04 FINGERPRINT MATCH: {} (tag {}, conf {:.2}) on {} — source: {}",
+                        fp.name, fp.tag, fp.confidence, src_str, fp.source
+                    );
+                    // Pull the EMA toward QUALITY_FINGERPRINT_MATCH while
+                    // a known signature is on the wire. Decay handles
+                    // cool-down naturally once the signature stops firing.
+                    let now = Instant::now();
+                    state
+                        .trust
+                        .write()
+                        .await
+                        .entry(src_str.clone())
+                        .or_insert_with(TrustState::new)
+                        .record_at(QUALITY_FINGERPRINT_MATCH, now);
+                }
+
                 let cot_msg = CotMessage {
                     uid: data.uid,
                     cot_type: data.cot_type,
@@ -449,7 +508,7 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                         crc_pct_60s,
                         crc_breach,
                         spatial_class,
-                        fingerprint: fingerprint_match.copied(),
+                        fingerprint: fingerprint_match,
                     },
                 };
 
@@ -461,7 +520,9 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                 // event in the rolling-rate window. We register the
                 // corrupt event, fire `QUALITY_CORRUPT` per-frame, and
                 // additionally fire `QUALITY_CRC_BREACH` on the rising
-                // edge of the 5%-over-60s threshold.
+                // edge of the 5%-over-60s threshold. The classifier sees
+                // corrupts via `crc_rate` so we don't double-count them
+                // into `SignalCounters`.
                 println!("Failed to parse CoT message (corrupt)\n");
                 let now = Instant::now();
                 let mut trust = state.trust.write().await;
@@ -816,8 +877,12 @@ fn render_detectors(d: &Detectors) -> Option<String> {
         SpatialClass::Blanket => tags.push("[FR-03 BLANKET]".to_string()),
         SpatialClass::Clear => {}
     }
-    if let Some(fp) = d.fingerprint {
-        tags.push(format!("[FR-04 {}]", fp.tag.to_uppercase()));
+    if let Some(fp) = &d.fingerprint {
+        tags.push(format!(
+            "[FR-04 {} conf={:.0}%]",
+            fp.tag.to_uppercase(),
+            fp.confidence * 100.0
+        ));
     }
     if tags.is_empty() {
         None
@@ -855,6 +920,22 @@ mod render_tests {
     use super::*;
     use crate::fingerprint;
 
+    fn match_for(tag: &str, confidence: f64) -> FingerprintMatch {
+        let fp = fingerprint::lookup_by_tag(tag).expect("tag present in catalog");
+        FingerprintMatch {
+            tag: fp.tag,
+            name: fp.name,
+            confidence,
+            matched_signals: vec!["drop_rate"],
+            freq_band_mhz: fp.freq_band_mhz,
+            gnss_overlap: fp.gnss_overlap,
+            range_km: fp.range_km,
+            sector_deg: fp.sector_deg,
+            source: fp.source,
+            primary_effect: fp.signature.primary_effect,
+        }
+    }
+
     #[test]
     fn render_detectors_clear_returns_none() {
         let d = Detectors::default();
@@ -863,19 +944,18 @@ mod render_tests {
 
     #[test]
     fn render_detectors_emits_all_active_signals() {
-        let leer3 = fingerprint::lookup_by_tag("leer3").copied();
         let d = Detectors {
             temporal_anomaly: true,
             crc_pct_60s: 0.082,
             crc_breach: true,
             spatial_class: SpatialClass::Localized,
-            fingerprint: leer3,
+            fingerprint: Some(match_for("leer3", 0.82)),
         };
         let line = render_detectors(&d).unwrap();
         assert!(line.contains("[FR-01 ANOMALY]"));
         assert!(line.contains("[FR-02 CRC=8.2%]"));
         assert!(line.contains("[FR-03 LOCALIZED]"));
-        assert!(line.contains("[FR-04 LEER3]"));
+        assert!(line.contains("[FR-04 LEER3"));
     }
 
     #[test]

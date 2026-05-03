@@ -1,8 +1,29 @@
 import { useEffect, useRef } from "react";
 import { wsUrl } from "@/config/env";
-import { enrichCot } from "@/lib/cot";
-import type { SensorType } from "@/types/cot";
+import { enrichCot, parseSenderUnit } from "@/lib/cot";
+import type { Detectors, FingerprintMatch, SensorType, SpatialClass } from "@/types/cot";
 import { useEventStore } from "@/stores/events";
+
+type WireFingerprint = {
+  tag?: string;
+  name?: string;
+  confidence?: number;
+  matched_signals?: string[];
+  freq_band_mhz?: [number, number];
+  gnss_overlap?: string;
+  range_km?: number;
+  sector_deg?: number | null;
+  source?: string;
+  primary_effect?: string;
+};
+
+type WireDetectors = {
+  temporal_anomaly?: boolean;
+  crc_pct_60s?: number;
+  crc_breach?: boolean;
+  spatial_class?: SpatialClass;
+  fingerprint?: WireFingerprint | null;
+};
 
 type WireMessage = {
   uid?: string | null;
@@ -21,6 +42,7 @@ type WireMessage = {
   trust_score?: number | null;
   sensor_lat?: number | null;
   sensor_lon?: number | null;
+  detectors?: WireDetectors | null;
 };
 
 const RECONNECT_DELAY_MS = 1500;
@@ -46,6 +68,46 @@ const cleanString = (raw: string | null | undefined): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const isSpatialClass = (v: unknown): v is SpatialClass =>
+  v === "clear" || v === "localized" || v === "blanket";
+
+const toFingerprintMatch = (
+  raw: WireFingerprint | null | undefined,
+): FingerprintMatch | null => {
+  if (!raw || !raw.tag || !raw.name) return null;
+  const conf = typeof raw.confidence === "number" ? raw.confidence : 0;
+  if (!Number.isFinite(conf)) return null;
+  const band = raw.freq_band_mhz;
+  return {
+    tag: raw.tag,
+    name: raw.name,
+    confidence: conf,
+    matchedSignals: Array.isArray(raw.matched_signals) ? raw.matched_signals : [],
+    freqBandMhz: Array.isArray(band) && band.length === 2 ? band : [0, 0],
+    gnssOverlap: raw.gnss_overlap ?? "",
+    rangeKm: typeof raw.range_km === "number" ? raw.range_km : 0,
+    sectorDeg: typeof raw.sector_deg === "number" ? raw.sector_deg : null,
+    source: raw.source ?? "",
+    primaryEffect: raw.primary_effect ?? "",
+  };
+};
+
+const toDetectors = (raw: WireDetectors | null | undefined): Detectors | undefined => {
+  if (!raw) return undefined;
+  const spatial = isSpatialClass(raw.spatial_class) ? raw.spatial_class : "clear";
+  const crcPct =
+    typeof raw.crc_pct_60s === "number" && Number.isFinite(raw.crc_pct_60s)
+      ? raw.crc_pct_60s
+      : 0;
+  return {
+    temporalAnomaly: !!raw.temporal_anomaly,
+    crcPct60s: crcPct,
+    crcBreach: !!raw.crc_breach,
+    spatialClass: spatial,
+    fingerprint: toFingerprintMatch(raw.fingerprint),
+  };
+};
+
 const toCotEvent = (m: WireMessage) => {
   if (!m.uid) return null;
   const uid = m.uid.trim();
@@ -54,6 +116,7 @@ const toCotEvent = (m: WireMessage) => {
   const lon = num(m.lon);
   if (lat === undefined || lon === undefined) return null;
   const now = new Date().toISOString();
+  const remarks = cleanString(m.remarks);
   return enrichCot({
     uid,
     cotType: m.cot_type ?? DEFAULT_COT_TYPE,
@@ -67,8 +130,12 @@ const toCotEvent = (m: WireMessage) => {
     ce: num(m.ce),
     le: num(m.le),
     callsign: cleanString(m.flight_number),
-    remarks: cleanString(m.remarks),
+    remarks,
     trustScore: m.trust_score ?? 1,
+    senderUnit: parseSenderUnit(remarks),
+    sensorLat: typeof m.sensor_lat === "number" ? m.sensor_lat : undefined,
+    sensorLon: typeof m.sensor_lon === "number" ? m.sensor_lon : undefined,
+    detectors: toDetectors(m.detectors),
   });
 };
 
