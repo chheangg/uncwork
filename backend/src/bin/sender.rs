@@ -37,7 +37,7 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 
 const OPENSKY_URL: &str = "https://opensky-network.org/api/states/all";
 const OPENSKY_POLL_SECS: u64 = 10;
-const EMIT_TICK_MS: u64 = 1000;
+const EMIT_TICK_MS: u64 = 500;
 // If a track hasn't been re-anchored by OpenSky in this many seconds,
 // stop emitting for it -- frontend will prune it shortly. Keeps trails
 // from drifting off into space when an aircraft leaves the bbox.
