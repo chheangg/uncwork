@@ -10,15 +10,21 @@ use std::time::{Duration, Instant};
 
 const LISTENER_URL: &str = "http://127.0.0.1:3000";
 
-// Fixed ground positions: eastern Ukraine, ~4.6 miles apart within the 5-mile neighbor radius
-const UNIT_A_LAT: f64 = 48.5000; // NW of Donetsk front
-const UNIT_A_LON: f64 = 36.9800;
-const UNIT_B_LAT: f64 = 48.4600; // SE position
-const UNIT_B_LON: f64 = 37.0600;
+// Ground unit positions sourced directly from the ndxml scenario
+const UNIT_A_LAT: f64 = 48.470; // GRD-FRIEND-01 (TEAM-1)
+const UNIT_A_LON: f64 = 37.020;
+const UNIT_B_LAT: f64 = 48.480; // GRD-FRIEND-02 (TEAM-2)
+const UNIT_B_LON: f64 = 37.050;
+const UNIT_C_LAT: f64 = 48.468; // GRD-FRIEND-03 (TEAM-3)
+const UNIT_C_LON: f64 = 37.018;
 
-// Primary data source: newline-delimited CoT XML file.
-// Falls back to OpenSky ADS-B if the file is not found.
-const NDXML_PATH: &str = "interactive_multi_asset.ndxml";
+// Per-unit ndxml files (one per track UID)
+const NDXML_PATH_A: &str = "grd-friend-01.ndxml";
+const NDXML_PATH_B: &str = "grd-friend-02.ndxml";
+const NDXML_PATH_C: &str = "grd-friend-03.ndxml";
+const NDXML_PATH_FW: &str = "fw-friend-01.ndxml";
+const NDXML_PATH_UAV1: &str = "uav-hostile-01.ndxml";
+const NDXML_PATH_UAV2: &str = "uav-hostile-02.ndxml";
 
 // Fallback bbox for the very first fetch before the listener tells us
 // the frontend's viewport. Roughly the SF bay area.
@@ -66,6 +72,16 @@ const UNIT_B_CHAOS: ChaosConfig = ChaosConfig {
     reorder_threshold: 0.90,
     burst_probability: 0.55,
     burst_max: 8,
+};
+
+// unit_c: degraded link (between moderate and severely degraded)
+const UNIT_C_CHAOS: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.30,
+    duplicate_threshold: 0.50,
+    corrupt_threshold: 0.65,
+    reorder_threshold: 0.83,
+    burst_probability: 0.42,
+    burst_max: 6,
 };
 
 #[derive(Clone, Copy)]
@@ -333,7 +349,7 @@ fn run_sender(
     chaos: ChaosConfig,
     sensor_lat: f64,
     sensor_lon: f64,
-    ndxml_messages: Option<Vec<String>>,
+    ndxml_files: Option<Vec<Vec<String>>>,
 ) {
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", bind_port))
         .unwrap_or_else(|e| panic!("[{unit}] failed to bind port {bind_port}: {e}"));
@@ -344,7 +360,11 @@ fn run_sender(
     let mut queue: VecDeque<String> = VecDeque::new();
     let mut seq = 0u64;
     let mut last_tick = Instant::now();
-    let mut ndxml_idx: usize = 0;
+    // One cursor per file so all lists advance in parallel each tick.
+    let mut ndxml_indices: Vec<usize> = ndxml_files
+        .as_ref()
+        .map(|fs| vec![0usize; fs.len()])
+        .unwrap_or_default();
 
     loop {
         // Drain any new fetches from the OpenSky thread (non-blocking).
@@ -368,12 +388,14 @@ fn run_sender(
         if now.duration_since(last_tick) >= Duration::from_millis(EMIT_TICK_MS) {
             let dt = now.duration_since(last_tick).as_secs_f64();
 
-            if let Some(ref msgs) = ndxml_messages {
-                // NDXML mode: emit one message per tick, cycling through the file.
-                seq += 1;
-                let raw = &msgs[ndxml_idx % msgs.len()];
-                ndxml_idx += 1;
-                queue.push_back(inject_ndxml(raw, seq, unit, sensor_lat, sensor_lon));
+            if let Some(ref files) = ndxml_files {
+                // NDXML mode: emit one message per file per tick, all files advance in parallel.
+                for (file_msgs, idx) in files.iter().zip(ndxml_indices.iter_mut()) {
+                    seq += 1;
+                    let raw = &file_msgs[*idx % file_msgs.len()];
+                    *idx += 1;
+                    queue.push_back(inject_ndxml(raw, seq, unit, sensor_lat, sensor_lon));
+                }
             } else {
                 // ADS-B mode: extrapolate every tracked aircraft and queue CoT.
                 for ac in state.values_mut() {
@@ -438,23 +460,40 @@ fn run_sender(
 }
 
 fn main() {
-    let ndxml = load_ndxml(NDXML_PATH);
-    let using_ndxml = ndxml.is_some();
+    let files_a = load_ndxml(NDXML_PATH_A).map(|f| vec![f]);
+
+    // unit_b drives its own position plus the friendly fixed-wing asset in parallel
+    let files_b = {
+        let mut files: Vec<Vec<String>> = Vec::new();
+        if let Some(f) = load_ndxml(NDXML_PATH_B) { files.push(f); }
+        if let Some(f) = load_ndxml(NDXML_PATH_FW) { files.push(f); }
+        if files.is_empty() { None } else { Some(files) }
+    };
+
+    // unit_c drives its own position plus both hostile UAVs in parallel
+    let files_c = {
+        let mut files: Vec<Vec<String>> = Vec::new();
+        if let Some(f) = load_ndxml(NDXML_PATH_C) { files.push(f); }
+        if let Some(f) = load_ndxml(NDXML_PATH_UAV1) { files.push(f); }
+        if let Some(f) = load_ndxml(NDXML_PATH_UAV2) { files.push(f); }
+        if files.is_empty() { None } else { Some(files) }
+    };
+
+    let using_ndxml = files_a.is_some() || files_b.is_some() || files_c.is_some();
 
     let (tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
     let (tx_b, rx_b) = mpsc::channel::<Vec<StateVector>>();
+    let (tx_c, rx_c) = mpsc::channel::<Vec<StateVector>>();
 
-    let msgs_a = ndxml.clone();
-    let msgs_b = ndxml;
-
-    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON, msgs_a));
-    thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON, msgs_b));
+    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON, files_a));
+    thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON, files_b));
+    thread::spawn(move || run_sender("unit_c", 9003, rx_c, UNIT_C_CHAOS, UNIT_C_LAT, UNIT_C_LON, files_c));
 
     if using_ndxml {
         println!("[main] ndxml mode active; ADS-B fetcher disabled");
         loop { thread::sleep(Duration::from_secs(3600)); }
     } else {
-        run_fetcher(vec![tx_a, tx_b]);
+        run_fetcher(vec![tx_a, tx_b, tx_c]);
     }
 }
 
