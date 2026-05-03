@@ -32,6 +32,16 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
   const deckRef = useRef<DeckGLRef | null>(null);
   const buildingsVisible = useLayersStore((s) => s.visible.buildings);
+  const mapStyle = useLayersStore((s) => s.mapStyle);
+
+  // Hardcoded so the user's VITE_MAP_STYLE_URL can't override the
+  // default and break the toggle. Topographic default for the
+  // tactical "military map" feel; satellite-streets for imagery.
+  const STYLE_URLS = {
+    topo: "mapbox://styles/mapbox/outdoors-v12",
+    satellite: "mapbox://styles/mapbox/satellite-streets-v12",
+  } as const;
+  const mapStyleUrl = STYLE_URLS[mapStyle];
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -47,10 +57,21 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
     if (!mapReady) return;
     const map = mapRef.current?.getMap();
     if (!map) return;
-    ensureTerrain(map);
-    ensureBuildingLayer(map);
-    setBuildingVisibility(map, buildingsVisible);
-  }, [mapReady, buildingsVisible]);
+    // Mapbox wipes custom sources/layers (DEM terrain, our extruded
+    // building layer) every time the style loads. Re-apply on init
+    // AND on every style.load so flipping TOPO <-> SAT preserves
+    // terrain + buildings.
+    const apply = () => {
+      ensureTerrain(map);
+      ensureBuildingLayer(map);
+      setBuildingVisibility(map, buildingsVisible);
+    };
+    apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+  }, [mapReady, buildingsVisible, mapStyleUrl]);
 
   const setBbox = useViewportStore((s) => s.set);
 
@@ -87,6 +108,13 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
     setMapReady(true);
     captureBbox();
   }, [captureBbox]);
+
+  // When the user flips TOPO <-> SAT, the <Map> remounts (new key).
+  // Reset mapReady so the apply effect re-runs against the new
+  // mapbox instance once its `load` fires.
+  useEffect(() => {
+    setMapReady(false);
+  }, [mapStyleUrl]);
 
   const handleContextMenu = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -143,13 +171,14 @@ export const MapView = ({ layers, onTrackContext }: MapViewProps) => {
         }}
       >
         <Map
+          key={mapStyleUrl}
           ref={mapRef}
           mapboxAccessToken={env.mapboxToken}
-          mapStyle={env.mapStyleUrl}
+          mapStyle={mapStyleUrl}
           onLoad={handleLoad}
           onMoveEnd={captureBbox}
-          reuseMaps
           attributionControl={false}
+          projection={{ name: "globe" }}
         />
       </DeckGL>
     </div>

@@ -47,7 +47,6 @@ export const App = () => {
   const augmentedEvents = useAffectedAugment(events);
   const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
-  const crt = useLayersStore((s) => s.crt);
   const zoomedOut = useViewStateStore(
     (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
   );
@@ -141,9 +140,9 @@ export const App = () => {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-terminal-bg text-terminal-fg">
       <MapView layers={layers} onTrackContext={handleTrackContext} />
-      {crt && <div className="crt-overlay" />}
+      <ScreenFrame />
       <MissionHeader trackCount={events.length} meanConfidence={meanConf} />
-      <aside className="pointer-events-auto absolute top-16 left-3 z-10 flex w-72 flex-col gap-3">
+      <aside className="pointer-events-auto absolute top-8 left-2 z-10 flex w-45 flex-col gap-2">
         <LayerTogglePanel />
         <StatusSummary
           counts={statusCounts}
@@ -152,7 +151,7 @@ export const App = () => {
         />
       </aside>
       {!detailOpen && (
-        <aside className="pointer-events-auto absolute top-16 right-3 z-10 flex w-72 flex-col gap-3">
+        <aside className="pointer-events-auto absolute top-8 right-2 z-10 flex w-45 flex-col gap-2">
           <TypeLegend />
         </aside>
       )}
@@ -171,3 +170,11 @@ export const App = () => {
     </div>
   );
 };
+
+const ScreenFrame = () => (
+  <div className="screen-frame">
+    <span className="corner-tr" />
+    <span className="corner-bl" />
+    <span className="sweep" />
+  </div>
+);

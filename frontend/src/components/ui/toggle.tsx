@@ -13,10 +13,10 @@ export const Toggle = ({ active, onChange, children, className }: ToggleProps) =
     type="button"
     onClick={() => onChange(!active)}
     className={cn(
-      "px-2.5 py-1 text-[11px] uppercase tracking-wider border transition-colors",
-      "border-terminal-border text-terminal-dim hover:text-terminal-fg hover:border-terminal-accent/60",
+      "px-1.5 py-0.5 text-[9px] uppercase tracking-widest border transition-colors font-bold leading-tight",
+      "border-terminal-border text-terminal-dim hover:text-terminal-fg hover:border-terminal-fg/40",
       active &&
-        "bg-terminal-accent/10 text-terminal-accent border-terminal-accent shadow-glow",
+        "bg-terminal-accent/10 text-terminal-accent border-terminal-accent",
       className,
     )}
   >

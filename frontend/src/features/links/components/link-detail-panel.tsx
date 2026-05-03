@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from "react";
 import type { CotEvent, LinkStatus } from "@/types/cot";
-import { sensorFullName } from "@/lib/sensor";
 import type { TrackPath } from "@/lib/track-path";
 import { TRAIL_FADE_S } from "@/features/trails";
+import { useLogStore } from "@/stores/log";
 import { statusColor } from "../lib/link-style";
 import type { AugmentedEvent } from "../hooks/use-affected-augment";
 
@@ -95,162 +95,178 @@ export const LinkDetailPanel = ({ track, onClose }: Props) => {
   const statusKey = e.status;
 
   return (
-    <aside className="pointer-events-auto absolute top-16 right-3 z-30 flex w-80 flex-col">
+    <aside className="pointer-events-auto absolute top-8 right-2 z-30 flex w-45 flex-col">
       <div className="panel-hot relative overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-px bg-terminal-accent/80" />
         <div className="absolute inset-x-0 bottom-0 h-px bg-terminal-accent/40" />
-        <div className="absolute left-0 top-0 h-3 w-3 border-l border-t border-terminal-accent" />
-        <div className="absolute right-0 top-0 h-3 w-3 border-r border-t border-terminal-accent" />
-        <div className="absolute left-0 bottom-0 h-3 w-3 border-l border-b border-terminal-accent" />
-        <div className="absolute right-0 bottom-0 h-3 w-3 border-r border-b border-terminal-accent" />
-        <Scanline />
 
-        <header className="flex items-center justify-between border-b border-terminal-accent/40 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="block h-2 w-2 animate-pulse rounded-full bg-terminal-accent" />
-            <span className="label text-terminal-accent">TELEMETRY</span>
+        <header className="flex items-center justify-between border-b border-terminal-accent/40 px-2 py-1 h-6">
+          <div className="flex items-center gap-1.5">
+            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-terminal-accent" />
+            <span className="label text-terminal-accent text-[9px]">TEL</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-terminal-dim hover:text-terminal-accent"
+            className="text-terminal-dim hover:text-terminal-accent text-[9px]"
             aria-label="Close detail panel"
           >
             [X]
           </button>
         </header>
 
-        <div className="space-y-3 px-3 py-2.5 text-[11px]">
+        <div className="space-y-1.5 px-2 py-1.5 text-[9px]">
           <div>
-            <div className="label">Callsign / UID</div>
-            <div className="stat text-[13px] tracking-wider">
+            <div className="stat text-[10px] tracking-wider font-bold">
               {e.callsign ?? "—"}
             </div>
-            <div className="text-terminal-dim text-[10px] truncate">{e.uid}</div>
+            <div className="text-terminal-dim text-[8px] truncate font-mono">{e.uid.slice(0, 16)}</div>
           </div>
 
-          <Row label="Status">
-            <span className={`stat ${STATUS_TEXT[statusKey]} uppercase`}>
-              {statusKey}
+          <CompactRow label="STA">
+            <span className={`stat ${STATUS_TEXT[statusKey]} uppercase font-bold`}>
+              {statusKey.slice(0, 3).toUpperCase()}
             </span>
             {e.recentlyAffected && (
-              <span className="ml-2 text-terminal-green">[recovered]</span>
+              <span className="ml-1 text-terminal-green text-[8px]">[RCV]</span>
             )}
-          </Row>
+          </CompactRow>
 
-          <Row label="Delivery">
+          <CompactRow label="DEL">
             {e.stale ? (
-              <span className="stat text-terminal-amber animate-blink">
-                STALE / DELAYED
+              <span className="stat text-terminal-amber animate-blink font-bold">
+                STALE
               </span>
             ) : (
-              <span className="stat text-terminal-green">ON-TIME</span>
+              <span className="stat text-terminal-green font-bold">OK</span>
             )}
-            <span className="ml-2 text-terminal-dim">
-              stale@ {new Date(e.staleAt).toLocaleTimeString()}
-            </span>
-          </Row>
+          </CompactRow>
 
           <Confidence value={e.confInt} />
 
-          <Row label="Position">
-            <div className="stat tabular-nums">{fmtCoord(e.lat, "lat")}</div>
-            <div className="stat tabular-nums">{fmtCoord(e.lon, "lon")}</div>
-            {e.hae !== undefined && (
-              <div className="text-terminal-dim">
-                alt {e.hae.toFixed(0)} m HAE
-              </div>
-            )}
-          </Row>
+          <CompactRow label="POS">
+            <div className="stat tabular-nums text-[8px]">{fmtCoord(e.lat, "lat")}</div>
+            <div className="stat tabular-nums text-[8px]">{fmtCoord(e.lon, "lon")}</div>
+          </CompactRow>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Row label="CE">
-              <span className="stat tabular-nums">
-                {e.ce !== undefined ? `${e.ce.toFixed(0)} m` : "—"}
+          <div className="grid grid-cols-2 gap-1">
+            <CompactRow label="ALT">
+              <span className="stat tabular-nums text-[8px]">
+                {e.hae !== undefined ? `${e.hae.toFixed(0)}m` : "—"}
               </span>
-            </Row>
-            <Row label="LE">
-              <span className="stat tabular-nums">
-                {e.le !== undefined ? `${e.le.toFixed(0)} m` : "—"}
+            </CompactRow>
+            <CompactRow label="CE">
+              <span className="stat tabular-nums text-[8px]">
+                {e.ce !== undefined ? `${e.ce.toFixed(0)}m` : "—"}
               </span>
-            </Row>
+            </CompactRow>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Row label="Sensor">
-              <span className="stat">{sensorFullName(e.sensorType)}</span>
-            </Row>
-            <Row label="Domain">
-              <span className="stat">
-                {DIMENSION_LABEL[e.dimension] ?? e.dimension}
+          <div className="grid grid-cols-2 gap-1">
+            <CompactRow label="SNS">
+              <span className="stat text-[8px] uppercase">{e.sensorType.slice(0, 3)}</span>
+            </CompactRow>
+            <CompactRow label="DIM">
+              <span className="stat text-[8px] uppercase">
+                {DIMENSION_LABEL[e.dimension]?.slice(0, 3) ?? e.dimension.slice(0, 3)}
               </span>
-            </Row>
+            </CompactRow>
           </div>
 
-          <Row label="Last Update">
-            <span className="stat">
+          <CompactRow label="UPD">
+            <span className="stat text-[8px]">
               {fmtSecondsAgo(Date.parse(e.time))}
             </span>
-            <span className="ml-2 text-terminal-dim">
-              {new Date(e.time).toLocaleTimeString()}
-            </span>
-          </Row>
+          </CompactRow>
 
           <StatusWindow track={track} />
 
           {stats && (
-            <div className="grid grid-cols-3 gap-2 border-t border-terminal-border/60 pt-2">
-              <Stat label="Points" value={stats.points.toString()} />
-              <Stat
-                label="Distance"
+            <div className="grid grid-cols-3 gap-1 border-t border-terminal-border/60 pt-1">
+              <CompactStat label="PTS" value={stats.points.toString()} />
+              <CompactStat
+                label="DST"
                 value={
                   stats.distanceM < 1000
                     ? `${stats.distanceM.toFixed(0)}m`
-                    : `${(stats.distanceM / 1000).toFixed(2)}km`
+                    : `${(stats.distanceM / 1000).toFixed(1)}km`
                 }
               />
-              <Stat
-                label="Δ Status"
+              <CompactStat
+                label="ΔS"
                 value={stats.statusChanges.toString()}
               />
             </div>
           )}
 
-          {e.remarks && (
-            <Row label="Remarks">
-              <span className="stat text-terminal-fg/80 leading-snug block">
-                {e.remarks}
-              </span>
-            </Row>
-          )}
-
-          <div className="text-terminal-dim text-[10px] flex items-center justify-between border-t border-terminal-border/60 pt-1.5">
-            <span>WINDOW {TRAIL_FADE_S}s</span>
-            <span className="animate-blink">▮</span>
-          </div>
+          <ActionRow uid={e.uid} status={statusKey} stale={e.stale} />
         </div>
       </div>
     </aside>
   );
 };
 
-const Row = ({
+const ActionRow = ({
+  uid,
+  status,
+  stale,
+}: {
+  uid: string;
+  status: LinkStatus;
+  stale: boolean;
+}) => {
+  const append = useLogStore((s) => s.append);
+  return (
+    <div className="grid grid-cols-2 gap-1 border-t border-terminal-border/60 pt-1">
+      <button
+        type="button"
+        onClick={() =>
+          append({
+            kind: "operator",
+            uid,
+            summary: "Operator ACKNOWLEDGED",
+            payload: { status, stale },
+          })
+        }
+        className="border border-terminal-border bg-terminal-panel/80 px-1 py-1 text-[9px] tracking-widest text-terminal-fg hover:border-terminal-fg/50 hover:bg-terminal-fg/10 font-bold"
+      >
+        [ACK]
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          append({
+            kind: "operator",
+            uid,
+            summary: "Operator ESCALATED",
+            payload: { status, stale, severity: "critical" },
+          })
+        }
+        className="border border-terminal-accent/70 bg-terminal-panel/80 px-1 py-1 text-[9px] tracking-widest text-terminal-accent hover:bg-terminal-accent/15 font-bold"
+      >
+        [ESC]
+      </button>
+    </div>
+  );
+};
+
+const CompactRow = ({
   label,
   children,
 }: {
   label: string;
   children: React.ReactNode;
 }) => (
-  <div>
-    <div className="label">{label}</div>
-    <div>{children}</div>
+  <div className="flex items-baseline gap-1">
+    <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">{label}:</span>
+    <div className="flex-1">{children}</div>
   </div>
 );
 
-const Stat = ({ label, value }: { label: string; value: string }) => (
+const CompactStat = ({ label, value }: { label: string; value: string }) => (
   <div>
-    <div className="label">{label}</div>
-    <div className="stat tabular-nums">{value}</div>
+    <div className="text-[8px] uppercase tracking-widest text-terminal-dim">{label}</div>
+    <div className="stat tabular-nums text-[8px]">{value}</div>
   </div>
 );
 
@@ -266,11 +282,11 @@ const Confidence = ({ value }: { value: number }) => {
   const [r, g, b] = statusColor(statusForConf(value));
   return (
     <div>
-      <div className="label flex justify-between">
-        <span>Confidence</span>
-        <span className="stat tabular-nums">{pct}%</span>
+      <div className="flex items-baseline gap-1">
+        <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">CNF:</span>
+        <span className="stat tabular-nums text-[8px] flex-1">{pct}%</span>
       </div>
-      <div className="mt-1 h-1.5 bg-terminal-border/60 relative overflow-hidden">
+      <div className="mt-0.5 h-1 bg-terminal-border/60 relative overflow-hidden">
         <div
           className="h-full"
           style={{
@@ -319,13 +335,13 @@ const StatusWindow = ({
 
   return (
     <div>
-      <div className="label flex justify-between">
-        <span>Status Window</span>
-        <span className="text-terminal-dim">
+      <div className="flex items-baseline gap-1 mb-0.5">
+        <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">WIN:</span>
+        <span className="text-terminal-dim text-[8px] flex-1">
           {track.timestamps.length} samples
         </span>
       </div>
-      <div className="relative mt-1 h-6 bg-terminal-border/40 overflow-hidden">
+      <div className="relative h-4 bg-terminal-border/40 overflow-hidden">
         {segments.map((s, i) => {
           const [r, g, b] = statusColor(s.status);
           return (
@@ -345,7 +361,7 @@ const StatusWindow = ({
           className="absolute right-0 top-0 bottom-0 w-px bg-terminal-fg/70"
         />
       </div>
-      <div className="text-terminal-dim text-[10px] flex justify-between mt-0.5 tabular-nums">
+      <div className="text-terminal-dim text-[8px] flex justify-between mt-0.5 tabular-nums">
         <span>-{TRAIL_FADE_S}s</span>
         <span>now</span>
       </div>
@@ -353,17 +369,3 @@ const StatusWindow = ({
   );
 };
 
-const Scanline = () => (
-  <div
-    aria-hidden
-    className="pointer-events-none absolute inset-0 overflow-hidden"
-  >
-    <div
-      className="absolute inset-x-0 h-8 animate-scan"
-      style={{
-        background:
-          "linear-gradient(180deg, rgba(255,58,58,0) 0%, rgba(255,58,58,0.08) 50%, rgba(255,58,58,0) 100%)",
-      }}
-    />
-  </div>
-);

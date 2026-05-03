@@ -1,19 +1,4 @@
-import type {
-  Affiliation,
-  CotEvent,
-  Dimension,
-  LinkStatus,
-} from "@/types/cot";
-
-const AFFILIATION_MAP: Record<string, Affiliation> = {
-  f: "friendly",
-  h: "hostile",
-  n: "neutral",
-  u: "unknown",
-  p: "pending",
-  a: "assumed",
-  s: "suspect",
-};
+import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
 
 const DIMENSION_MAP: Record<string, Dimension> = {
   A: "air",
@@ -24,9 +9,6 @@ const DIMENSION_MAP: Record<string, Dimension> = {
   F: "sof",
   X: "sensor",
 };
-
-export const parseAffiliation = (cotType: string): Affiliation =>
-  AFFILIATION_MAP[cotType.split("-")[1]?.toLowerCase() ?? ""] ?? "unknown";
 
 export const parseDimension = (cotType: string): Dimension =>
   DIMENSION_MAP[cotType.split("-")[2] ?? ""] ?? "other";
@@ -76,7 +58,6 @@ export const enrichCot = (raw: RawCot): CotEvent => {
   const confInt = computeConfInt(raw);
   return {
     ...raw,
-    affiliation: parseAffiliation(raw.cotType),
     dimension: parseDimension(raw.cotType),
     confInt,
     status: computeStatus(confInt),

@@ -9,18 +9,18 @@ type LegendItem = {
 };
 
 const ITEMS: LegendItem[] = [
-  { dimension: "sensor", label: "Sensor", hint: "fixed array / radar" },
-  { dimension: "ground", label: "Ground", hint: "armor / vehicle" },
-  { dimension: "air", label: "Air", hint: "fixed / rotor / uav" },
-  { dimension: "sea_surface", label: "Surface", hint: "warship / vessel" },
-  { dimension: "sea_subsurface", label: "Subsurface", hint: "submersible" },
-  { dimension: "space", label: "Space", hint: "satellite asset" },
-  { dimension: "sof", label: "SOF", hint: "special ops" },
+  { dimension: "sensor", label: "SNS", hint: "radar/array" },
+  { dimension: "ground", label: "GND", hint: "armor/veh" },
+  { dimension: "air", label: "AIR", hint: "fixed/uav" },
+  { dimension: "sea_surface", label: "SUR", hint: "warship" },
+  { dimension: "sea_subsurface", label: "SUB", hint: "submersible" },
+  { dimension: "space", label: "SPC", hint: "satellite" },
+  { dimension: "sof", label: "SOF", hint: "spec ops" },
 ];
 
 export const TypeLegend = () => (
-  <Panel title="Link Types" hint="status on pole · trail">
-    <ul className="grid grid-cols-2 gap-x-2 gap-y-2">
+  <Panel title="TYP" hint="sta·trail">
+    <ul className="space-y-1">
       {ITEMS.map((item) => (
         <LegendRow key={item.dimension} item={item} />
       ))}
@@ -29,16 +29,16 @@ export const TypeLegend = () => (
 );
 
 const LegendRow = ({ item }: { item: LegendItem }) => (
-  <li className="flex items-center gap-2 min-w-0">
+  <li className="flex items-center gap-1.5 min-w-0">
     <div
-      className="block h-7 w-7 shrink-0"
+      className="block h-5 w-5 shrink-0"
       dangerouslySetInnerHTML={{ __html: previewSvg(item.dimension) }}
     />
-    <div className="leading-tight min-w-0 flex-1">
-      <div className="text-[10px] uppercase tracking-wider text-terminal-fg truncate">
+    <div className="leading-none min-w-0 flex-1">
+      <span className="text-[9px] uppercase tracking-widest text-terminal-fg font-bold">
         {item.label}
-      </div>
-      <div className="text-[9px] text-terminal-dim truncate">{item.hint}</div>
+      </span>
+      <span className="text-[8px] text-terminal-dim ml-1">{item.hint}</span>
     </div>
   </li>
 );
