@@ -456,13 +456,13 @@ fn run_sender(
 }
 
 fn main() {
-    let files_a = load_ndxml(NDXML_PATH_A).map(|f| vec![f]);
+    // let files_a = load_ndxml(NDXML_PATH_A).map(|f| vec![f]);
 
-    // unit_b drives its own position plus the friendly fixed-wing asset in parallel
+    // unit_b drives its own position only
     let files_b = {
         let mut files: Vec<Vec<String>> = Vec::new();
         if let Some(f) = load_ndxml(NDXML_PATH_B) { files.push(f); }
-        if let Some(f) = load_ndxml(NDXML_PATH_FW) { files.push(f); }
+        // if let Some(f) = load_ndxml(NDXML_PATH_FW) { files.push(f); }
         if files.is_empty() { None } else { Some(files) }
     };
 
@@ -475,13 +475,13 @@ fn main() {
         if files.is_empty() { None } else { Some(files) }
     };
 
-    let using_ndxml = files_a.is_some() || files_b.is_some() || files_c.is_some();
+    let using_ndxml = files_b.is_some() || files_c.is_some();
 
-    let (tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
+    // let (tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
     let (tx_b, rx_b) = mpsc::channel::<Vec<StateVector>>();
     let (tx_c, rx_c) = mpsc::channel::<Vec<StateVector>>();
 
-    thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON, files_a));
+    // thread::spawn(move || run_sender("unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON, files_a));
     thread::spawn(move || run_sender("unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON, files_b));
     thread::spawn(move || run_sender("unit_c", 9003, rx_c, UNIT_C_CHAOS, UNIT_C_LAT, UNIT_C_LON, files_c));
 
@@ -489,7 +489,7 @@ fn main() {
         println!("[main] ndxml mode active; ADS-B fetcher disabled");
         loop { thread::sleep(Duration::from_secs(3600)); }
     } else {
-        run_fetcher(vec![tx_a, tx_b, tx_c]);
+        run_fetcher(vec![tx_b, tx_c]);
     }
 }
 
