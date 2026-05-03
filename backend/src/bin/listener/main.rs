@@ -222,6 +222,7 @@ async fn main() -> std::io::Result<()> {
         .route("/viewport", get(get_viewport).post(set_viewport))
         .route("/scenarios", get(get_scenarios))
         .route("/scenarios/active", axum::routing::post(set_active_scenario))
+        .route("/scenarios/speed", axum::routing::post(set_speed))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -517,6 +518,9 @@ async fn get_viewport(State(state): State<Arc<AppState>>) -> Json<Viewport> {
 struct ScenarioListResponse {
     active: String,
     available: Vec<String>,
+    speed: f64,
+    speed_min: f64,
+    speed_max: f64,
 }
 
 #[derive(Deserialize)]
@@ -524,9 +528,18 @@ struct ScenarioSetRequest {
     name: String,
 }
 
+#[derive(Deserialize)]
+struct SpeedSetRequest {
+    speed: f64,
+}
+
 const SCENARIO_DIR: &str = "scenarios";
 const SCENARIO_DEFAULT: &str = "uav";
 const SCENARIO_ACTIVE_FILE: &str = "scenarios/.active";
+const SCENARIO_SPEED_FILE: &str = "scenarios/.speed";
+const SCENARIO_SPEED_MIN: f64 = 0.25;
+const SCENARIO_SPEED_MAX: f64 = 4.0;
+const SCENARIO_SPEED_DEFAULT: f64 = 1.0;
 
 fn list_available_scenarios() -> Vec<String> {
     let mut out: Vec<String> = std::fs::read_dir(SCENARIO_DIR)
@@ -552,11 +565,27 @@ fn read_active_scenario() -> String {
         .unwrap_or_else(|| SCENARIO_DEFAULT.to_string())
 }
 
-async fn get_scenarios() -> Json<ScenarioListResponse> {
-    Json(ScenarioListResponse {
+fn read_active_speed() -> f64 {
+    std::fs::read_to_string(SCENARIO_SPEED_FILE)
+        .ok()
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map(|v| v.clamp(SCENARIO_SPEED_MIN, SCENARIO_SPEED_MAX))
+        .unwrap_or(SCENARIO_SPEED_DEFAULT)
+}
+
+fn current_scenario_state() -> ScenarioListResponse {
+    ScenarioListResponse {
         active: read_active_scenario(),
         available: list_available_scenarios(),
-    })
+        speed: read_active_speed(),
+        speed_min: SCENARIO_SPEED_MIN,
+        speed_max: SCENARIO_SPEED_MAX,
+    }
+}
+
+async fn get_scenarios() -> Json<ScenarioListResponse> {
+    Json(current_scenario_state())
 }
 
 async fn set_active_scenario(
@@ -576,10 +605,27 @@ async fn set_active_scenario(
         ));
     }
     println!("[scenario] active scenario set to {}", req.name);
-    Ok(Json(ScenarioListResponse {
-        active: req.name,
-        available,
-    }))
+    Ok(Json(current_scenario_state()))
+}
+
+async fn set_speed(
+    Json(req): Json<SpeedSetRequest>,
+) -> Result<Json<ScenarioListResponse>, (axum::http::StatusCode, String)> {
+    if !req.speed.is_finite() || req.speed <= 0.0 {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("invalid speed: {}", req.speed),
+        ));
+    }
+    let clamped = req.speed.clamp(SCENARIO_SPEED_MIN, SCENARIO_SPEED_MAX);
+    if let Err(e) = std::fs::write(SCENARIO_SPEED_FILE, format!("{}", clamped).as_bytes()) {
+        return Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write {}: {}", SCENARIO_SPEED_FILE, e),
+        ));
+    }
+    println!("[scenario] speed set to {:.2}x", clamped);
+    Ok(Json(current_scenario_state()))
 }
 
 async fn set_viewport(

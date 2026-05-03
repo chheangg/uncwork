@@ -4,17 +4,22 @@ import { httpUrl } from "@/config/env";
 export type ScenarioList = {
   active: string;
   available: string[];
+  speed: number;
+  speed_min: number;
+  speed_max: number;
 };
 
 const REFRESH_MS = 2000;
 
-// Polls the listener for the active scenario name + the list of
-// available scenarios on disk. Includes a setter that POSTs the new
-// active scenario; the sender picks up the change via its own poller
-// and emits a reset signal so the frontend clears.
+// Polls the listener for the active scenario + speed multiplier and
+// the list of available scenarios on disk. Includes setters that
+// POST changes; the sender picks them up via its own poller and
+// adjusts on the next tick (and emits a reset signal on scenario
+// change so the frontend clears).
 export const useScenarios = (): {
   list: ScenarioList | null;
   setActive: (name: string) => Promise<void>;
+  setSpeed: (speed: number) => Promise<void>;
   pending: string | null;
   error: string | null;
 } => {
@@ -72,5 +77,26 @@ export const useScenarios = (): {
     [],
   );
 
-  return { list, setActive, pending, error };
+  const setSpeed = useCallback(async (speed: number) => {
+    // Optimistic update so the slider knob tracks the user's hand.
+    setList((prev) => (prev ? { ...prev, speed } : prev));
+    try {
+      const res = await fetch(httpUrl("/scenarios/speed"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speed }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`status ${res.status}: ${text}`);
+      }
+      const data = (await res.json()) as ScenarioList;
+      setList(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  return { list, setActive, setSpeed, pending, error };
 };

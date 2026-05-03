@@ -28,10 +28,11 @@ const NDXML_FILE_FW: &str = "fw-friend-01.ndxml";
 const NDXML_FILE_UAV1: &str = "uav-hostile-01.ndxml";
 const NDXML_FILE_UAV2: &str = "uav-hostile-02.ndxml";
 
-// File the listener writes to when the operator switches scenarios.
-// Sender threads poll this and reload their .ndxml files when the
-// value changes. Lives in the repo root next to `scenarios/`.
+// Files the listener writes to when the operator changes scenario or
+// speed. Sender threads poll these via dedicated state and react on
+// the next tick. Live next to `scenarios/`.
 const ACTIVE_SCENARIO_FILE: &str = "scenarios/.active";
+const SPEED_FILE: &str = "scenarios/.speed";
 const DEFAULT_SCENARIO: &str = "uav";
 const SCENARIO_POLL_MS: u64 = 500;
 
@@ -46,10 +47,15 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 
 const OPENSKY_URL: &str = "https://opensky-network.org/api/states/all";
 const OPENSKY_POLL_SECS: u64 = 10;
-// 250ms tick == 4x the prior playback rate. Scenario .ndxml files
-// generate frames at TICK_S=0.5; emitting one frame every 250ms
-// compresses the scenario's wall-clock duration roughly 2x.
-const EMIT_TICK_MS: u64 = 250;
+// Base tick interval at speed multiplier 1.0. Scenario .ndxml files
+// generate frames at TICK_S=0.5, so 250ms is "2x scenario design".
+// The runtime speed multiplier scales this -- effective_ms = BASE
+// / speed. The listener exposes a slider that writes the speed to
+// scenarios/.speed; the sender poller picks it up.
+const EMIT_TICK_BASE_MS: u64 = 250;
+const SPEED_MIN: f64 = 0.25;
+const SPEED_MAX: f64 = 4.0;
+const SPEED_DEFAULT: f64 = 1.0;
 // If a track hasn't been re-anchored by OpenSky in this many seconds,
 // stop emitting for it -- frontend will prune it shortly. Keeps trails
 // from drifting off into space when an aircraft leaves the bbox.
@@ -359,6 +365,7 @@ fn run_sender(
     sensor_lon: f64,
     ndxml_files_for_unit: Option<Vec<&'static str>>,
     scenario: Arc<RwLock<String>>,
+    speed: Arc<RwLock<f64>>,
 ) {
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", bind_port))
         .unwrap_or_else(|e| panic!("[{unit}] failed to bind port {bind_port}: {e}"));
@@ -416,9 +423,15 @@ fn run_sender(
             );
         }
 
-        // Tick once per EMIT_TICK_MS: queue the next message(s).
+        // Tick once per (BASE / speed) ms: queue the next message(s).
+        // Speed is read every loop iteration so a slider change takes
+        // effect on the next tick.
         let now = Instant::now();
-        if now.duration_since(last_tick) >= Duration::from_millis(EMIT_TICK_MS) {
+        let speed_now = *speed.read().unwrap();
+        let tick_ms = ((EMIT_TICK_BASE_MS as f64) / speed_now.clamp(SPEED_MIN, SPEED_MAX))
+            .round() as u64;
+        let tick_ms = tick_ms.max(20);
+        if now.duration_since(last_tick) >= Duration::from_millis(tick_ms) {
             let dt = now.duration_since(last_tick).as_secs_f64();
 
             // If the active scenario changed, reload .ndxml files,
@@ -563,9 +576,17 @@ fn main() {
     let scenario = Arc::new(RwLock::new(initial.clone()));
     println!("[main] active scenario at startup: {}", initial);
 
+    // Shared playback-speed multiplier. Same poller pattern -- reads
+    // scenarios/.speed on a tight loop so the operator's slider
+    // change reaches every unit thread within ~SCENARIO_POLL_MS.
+    let initial_speed = read_speed_file().unwrap_or(SPEED_DEFAULT);
+    let speed = Arc::new(RwLock::new(initial_speed));
+    println!("[main] speed multiplier at startup: {:.2}x", initial_speed);
+
     {
         let scenario = Arc::clone(&scenario);
-        thread::spawn(move || run_scenario_poller(scenario));
+        let speed = Arc::clone(&speed);
+        thread::spawn(move || run_scenario_poller(scenario, speed));
     }
 
     let (_tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
@@ -574,28 +595,31 @@ fn main() {
 
     {
         let scenario = Arc::clone(&scenario);
+        let speed = Arc::clone(&speed);
         thread::spawn(move || {
             run_sender(
                 "unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON,
-                files_a, scenario,
+                files_a, scenario, speed,
             )
         });
     }
     {
         let scenario = Arc::clone(&scenario);
+        let speed = Arc::clone(&speed);
         thread::spawn(move || {
             run_sender(
                 "unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON,
-                files_b, scenario,
+                files_b, scenario, speed,
             )
         });
     }
     {
         let scenario = Arc::clone(&scenario);
+        let speed = Arc::clone(&speed);
         thread::spawn(move || {
             run_sender(
                 "unit_c", 9003, rx_c, UNIT_C_CHAOS, UNIT_C_LAT, UNIT_C_LON,
-                files_c, scenario,
+                files_c, scenario, speed,
             )
         });
     }
@@ -619,21 +643,40 @@ fn read_active_scenario_file() -> Option<String> {
     }
 }
 
-// Polls the marker file on disk and pushes any change into the shared
-// scenario state. The listener writes the marker file when the
-// frontend POSTs /scenarios/active, which makes the poller a thin
-// bridge between the two processes.
-fn run_scenario_poller(scenario: Arc<RwLock<String>>) {
+fn read_speed_file() -> Option<f64> {
+    let path = find_repo_path(SPEED_FILE)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let parsed: f64 = content.trim().parse().ok()?;
+    if parsed.is_finite() && parsed > 0.0 {
+        Some(parsed.clamp(SPEED_MIN, SPEED_MAX))
+    } else {
+        None
+    }
+}
+
+// Polls the marker files on disk and pushes any change into the
+// shared state. The listener writes the marker files when the
+// frontend POSTs the corresponding endpoint, which makes the poller
+// a thin bridge between the two processes.
+fn run_scenario_poller(scenario: Arc<RwLock<String>>, speed: Arc<RwLock<f64>>) {
     loop {
         thread::sleep(Duration::from_millis(SCENARIO_POLL_MS));
-        let on_disk = match read_active_scenario_file() {
-            Some(s) => s,
-            None => continue,
-        };
-        let current = scenario.read().unwrap().clone();
-        if on_disk != current {
-            println!("[poller] scenario change on disk: {} -> {}", current, on_disk);
-            *scenario.write().unwrap() = on_disk;
+        if let Some(on_disk) = read_active_scenario_file() {
+            let current = scenario.read().unwrap().clone();
+            if on_disk != current {
+                println!("[poller] scenario change on disk: {} -> {}", current, on_disk);
+                *scenario.write().unwrap() = on_disk;
+            }
+        }
+        if let Some(on_disk) = read_speed_file() {
+            let current = *speed.read().unwrap();
+            if (on_disk - current).abs() > 1e-3 {
+                println!(
+                    "[poller] speed change on disk: {:.2}x -> {:.2}x",
+                    current, on_disk
+                );
+                *speed.write().unwrap() = on_disk;
+            }
         }
     }
 }
