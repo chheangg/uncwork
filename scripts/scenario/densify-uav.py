@@ -19,7 +19,9 @@ Run from the repo root:
 import re
 from pathlib import Path
 
-DENSIFY_FACTOR = 5
+# 2 = 80 frames at 1 Hz, per-step ~70 m on the map -- visibly fast UAV
+# (~70 m/s, ~250 km/h). Smoother factors (3, 5) felt sluggish.
+DENSIFY_FACTOR = 2
 NEW_COT_TYPE = "a-h-A-M-F-Q"
 
 UAV_FILES = ["uav-hostile-01.ndxml", "uav-hostile-02.ndxml"]

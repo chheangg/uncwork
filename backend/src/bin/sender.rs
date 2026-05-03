@@ -54,35 +54,22 @@ struct Viewport {
     east: f64,
 }
 
-// unit_a: moderate instability
-const UNIT_A_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.20,
-    duplicate_threshold: 0.40,
-    corrupt_threshold: 0.55,
-    reorder_threshold: 0.75,
-    burst_probability: 0.30,
-    burst_max: 5,
+// main is the no-chaos baseline scenario: clean wire, no scripted
+// drops/dups/corrupts/reorders. Demo branches (feat/scripted-data-jam,
+// feat/fire-and-maneuver-scenario) override these with active chaos
+// profiles so jamming can be visualised.
+const NO_CHAOS: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.0,
+    duplicate_threshold: 0.0,
+    corrupt_threshold: 0.0,
+    reorder_threshold: 0.0,
+    burst_probability: 0.0,
+    burst_max: 3,
 };
 
-// unit_b: severely degraded link
-const UNIT_B_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.40,
-    duplicate_threshold: 0.60,
-    corrupt_threshold: 0.75,
-    reorder_threshold: 0.90,
-    burst_probability: 0.55,
-    burst_max: 8,
-};
-
-// unit_c: degraded link (between moderate and severely degraded)
-const UNIT_C_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.30,
-    duplicate_threshold: 0.50,
-    corrupt_threshold: 0.65,
-    reorder_threshold: 0.83,
-    burst_probability: 0.42,
-    burst_max: 6,
-};
+const UNIT_A_CHAOS: ChaosConfig = NO_CHAOS;
+const UNIT_B_CHAOS: ChaosConfig = NO_CHAOS;
+const UNIT_C_CHAOS: ChaosConfig = NO_CHAOS;
 
 #[derive(Clone, Copy)]
 struct ChaosConfig {
