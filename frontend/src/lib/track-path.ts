@@ -1,10 +1,20 @@
 import type { CotEvent, LinkStatus } from "@/types/cot";
 
+export type Sample = { t: number; status: LinkStatus };
+
 export type TrackPath<E extends CotEvent = CotEvent> = {
   uid: string;
+  // path/timestamps/statuses describe geometric transitions only --
+  // a stationary asset reporting the same lat/lon/status will never
+  // grow these arrays past one entry.
   path: [number, number][];
   timestamps: number[];
   statuses: LinkStatus[];
+  // samples is a per-ingest record of the rolling 60s window. Every
+  // event upsert appends one entry, regardless of whether the
+  // position or status changed. Used by the link detail panel's
+  // status-window strip and sample counter.
+  samples: Sample[];
   latest: E;
 };
 

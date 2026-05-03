@@ -305,7 +305,7 @@ const StatusWindow = ({
   track: TrackPath<CotEvent>;
 }) => {
   const segments = useMemo(() => {
-    const n = track.timestamps.length;
+    const n = track.samples.length;
     if (n === 0) return [];
     const now = Date.now() / 1000;
     const windowStart = now - TRAIL_FADE_S;
@@ -314,21 +314,21 @@ const StatusWindow = ({
       ((Math.max(windowStart, Math.min(now, t)) - windowStart) / span) * 100;
     const out: { leftPct: number; widthPct: number; status: LinkStatus }[] = [];
     for (let i = 0; i < n - 1; i++) {
-      const left = pctOf(track.timestamps[i]!);
-      const right = pctOf(track.timestamps[i + 1]!);
+      const left = pctOf(track.samples[i]!.t);
+      const right = pctOf(track.samples[i + 1]!.t);
       const width = right - left;
       if (width <= 0) continue;
       out.push({
         leftPct: left,
         widthPct: width,
-        status: track.statuses[i] ?? track.latest.status,
+        status: track.samples[i]!.status,
       });
     }
-    const lastLeft = pctOf(track.timestamps[n - 1]!);
+    const lastLeft = pctOf(track.samples[n - 1]!.t);
     out.push({
       leftPct: lastLeft,
       widthPct: Math.max(0, 100 - lastLeft),
-      status: track.statuses[n - 1] ?? track.latest.status,
+      status: track.samples[n - 1]!.status,
     });
     return out;
   }, [track]);
@@ -338,7 +338,7 @@ const StatusWindow = ({
       <div className="flex items-baseline gap-1 mb-0.5">
         <span className="text-[8px] uppercase tracking-widest text-terminal-dim w-8">WIN:</span>
         <span className="text-terminal-dim text-[8px] flex-1">
-          {track.timestamps.length} samples
+          {track.samples.length} samples
         </span>
       </div>
       <div className="relative h-4 bg-terminal-border/40 overflow-hidden">

@@ -4,8 +4,6 @@ import type { Dimension, SensorType } from "@/types/cot";
 export type LogEntryKind =
   | "system"
   | "operator"
-  | "recommendation"
-  | "recommendation-action"
   | "status"
   | "delivery"
   | "track";

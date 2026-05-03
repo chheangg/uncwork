@@ -10,7 +10,6 @@ import {
   LinkDetailPanel,
   type ContextMenuState,
 } from "@/features/links";
-import { RecommenderPanel, useRecommender } from "@/features/recommender";
 import { EventTerminal, useDerivedLog } from "@/features/terminal";
 import { useSelectionStore } from "@/stores/selection";
 import { buildHeatmapLayers } from "@/features/heatmap";
@@ -118,7 +117,6 @@ export const App = () => {
   );
 
   const detailOpen = selectedTrack !== null;
-  const recommendation = useRecommender(selectedTrack);
 
   useEffect(() => {
     if (!selectedTrack || selectedTrack.path.length === 0) return;
@@ -157,7 +155,6 @@ export const App = () => {
         </aside>
       )}
       <LinkDetailPanel track={selectedTrack} onClose={deselect} />
-      {detailOpen && <RecommenderPanel rec={recommendation} />}
       <TrackContextMenu
         menu={contextMenu}
         onDetail={(uid) => {

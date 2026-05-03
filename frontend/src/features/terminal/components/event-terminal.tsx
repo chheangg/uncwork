@@ -12,8 +12,6 @@ const KIND_TONE: Record<LogEntryKind, string> = {
   delivery: "text-terminal-amber",
   track: "text-terminal-green",
   operator: "text-terminal-blue",
-  recommendation: "text-terminal-accent",
-  "recommendation-action": "text-terminal-accent",
   system: "text-terminal-dim",
 };
 
@@ -22,8 +20,6 @@ const KIND_LABEL: Record<LogEntryKind, string> = {
   delivery: "DEL",
   track: "TRK",
   operator: "OPS",
-  recommendation: "AI",
-  "recommendation-action": "AI",
   system: "SYS",
 };
 
@@ -33,8 +29,7 @@ const KIND_GROUPS: KindGroup[] = [
   { key: "status", label: "STA", kinds: ["status"] },
   { key: "delivery", label: "DEL", kinds: ["delivery"] },
   { key: "track", label: "TRK", kinds: ["track"] },
-  { key: "ops", label: "OPS", kinds: ["operator", "recommendation-action"] },
-  { key: "ai", label: "AI", kinds: ["recommendation"] },
+  { key: "ops", label: "OPS", kinds: ["operator"] },
   { key: "system", label: "SYS", kinds: ["system"] },
 ];
 

@@ -246,9 +246,7 @@ Built (in order):
 
 Pending (in CLAUDE.md priority):
 1. **Notification store** — tap `AFFECTED_HISTORY` to emit toasts on transitions (`healthy → degraded`, `degraded → healthy`, etc.). Bottom-right stack, status-colored.
-2. **AI recommender** — SSE stream, panel beside detail, action buttons that emit operator events back into the log.
-3. **Event terminal** — bottom strip, monospace tail of all CoT events.
-4. **Replay scrubber** — playhead store, filter all layers by `event.timestamp <= playhead`.
+2. **Replay scrubber** — playhead store, filter all layers by `event.timestamp <= playhead`.
 
 ## What the user has ruled out
 

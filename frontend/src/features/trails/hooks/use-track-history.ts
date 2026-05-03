@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { CotEvent, LinkStatus } from "@/types/cot";
-import type { TrackPath } from "@/lib/track-path";
+import type { Sample, TrackPath } from "@/lib/track-path";
 import { TRAIL_FADE_S } from "../lib/build-trails-layer";
 
 const POSITION_EPSILON = 1e-7;
@@ -9,6 +9,9 @@ type HistoryEntry = {
   path: [number, number][];
   timestamps: number[];
   statuses: LinkStatus[];
+  // every ingest in the last TRAIL_FADE_S seconds, used for the
+  // detail-panel sample counter and status-window strip.
+  samples: Sample[];
   latest: CotEvent;
 };
 
@@ -28,13 +31,14 @@ export const useTrackHistory = <E extends CotEvent>(
     for (const e of events) {
       const point: [number, number] = [e.lon, e.lat];
       const eventTime = t;
-      
+
       const existing = HISTORY.get(e.uid);
       if (!existing) {
         HISTORY.set(e.uid, {
           path: [point],
           timestamps: [eventTime],
           statuses: [e.status],
+          samples: [{ t: eventTime, status: e.status }],
           latest: e,
         });
         continue;
@@ -51,6 +55,7 @@ export const useTrackHistory = <E extends CotEvent>(
         existing.timestamps.push(eventTime);
         existing.statuses.push(e.status);
       }
+      existing.samples.push({ t: eventTime, status: e.status });
       existing.latest = e;
 
       const cutoff = t - TRAIL_FADE_S;
@@ -66,6 +71,16 @@ export const useTrackHistory = <E extends CotEvent>(
         existing.timestamps.splice(0, drop);
         existing.statuses.splice(0, drop);
       }
+      let sampleDrop = 0;
+      while (
+        sampleDrop < existing.samples.length &&
+        (existing.samples[sampleDrop]?.t ?? eventTime) < cutoff
+      ) {
+        sampleDrop++;
+      }
+      if (sampleDrop > 0) {
+        existing.samples.splice(0, sampleDrop);
+      }
     }
 
     const out: TrackPath<E>[] = [];
@@ -75,6 +90,7 @@ export const useTrackHistory = <E extends CotEvent>(
         path: h.path.slice(),
         timestamps: h.timestamps.slice(),
         statuses: h.statuses.slice(),
+        samples: h.samples.slice(),
         latest: h.latest as E,
       });
     }
