@@ -37,7 +37,11 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 
 const OPENSKY_URL: &str = "https://opensky-network.org/api/states/all";
 const OPENSKY_POLL_SECS: u64 = 10;
-const EMIT_TICK_MS: u64 = 1000;
+// 250ms tick == 4x the prior playback rate. The fire-and-maneuver
+// ndxml is generated at TICK_S=0.5 (so each file holds ~60s of frames
+// at 0.5s/frame); emitting one frame every 250ms compresses that into
+// ~30s wall-clock and makes the visible motion read as fast.
+const EMIT_TICK_MS: u64 = 250;
 // If a track hasn't been re-anchored by OpenSky in this many seconds,
 // stop emitting for it -- frontend will prune it shortly. Keeps trails
 // from drifting off into space when an aircraft leaves the bbox.
