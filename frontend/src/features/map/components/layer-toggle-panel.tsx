@@ -3,15 +3,15 @@ import { Toggle } from "@/components/ui/toggle";
 import { useLayersStore, type LayerKey, type MapStyle } from "@/stores/layers";
 
 const LAYERS: { key: LayerKey; label: string }[] = [
-  { key: "links", label: "LNK" },
-  { key: "trails", label: "TRL" },
-  { key: "heatmap", label: "HTM" },
-  { key: "buildings", label: "BLD" },
+  { key: "links", label: "LINKS" },
+  { key: "trails", label: "TRAILS" },
+  { key: "heatmap", label: "HEATMAP" },
+  { key: "buildings", label: "BLDGS" },
 ];
 
 const MAP_STYLES: { key: MapStyle; label: string }[] = [
   { key: "topo", label: "TOPO" },
-  { key: "satellite", label: "SAT" },
+  { key: "satellite", label: "SATELLITE" },
 ];
 
 export const LayerTogglePanel = () => {
@@ -21,7 +21,7 @@ export const LayerTogglePanel = () => {
   const setMapStyle = useLayersStore((s) => s.setMapStyle);
 
   return (
-    <Panel title="LYR" hint="[R]">
+    <Panel title="LAYERS" hint="[R]">
       <div className="space-y-1">
         <div className="grid grid-cols-2 gap-1">
           {LAYERS.map(({ key, label }) => (
