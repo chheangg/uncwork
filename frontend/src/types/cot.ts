@@ -37,7 +37,7 @@ export type CotEvent = {
   le?: number;
   remarks?: string;
   callsign?: string;
-  confInt: number;
+  trustScore: number;
   status: LinkStatus;
   stale: boolean;
 };

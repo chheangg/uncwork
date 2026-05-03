@@ -148,7 +148,7 @@ const buildRationale = (
   primary: RecommendationAction,
   trail: TrackPath<AugmentedEvent>,
 ): { rationale: string; evidence: string[] } => {
-  const confPct = Math.round(e.confInt * 100);
+  const confPct = Math.round(e.trustScore * 100);
   const samples = trail.timestamps.length;
   const statusChanges = trail.statuses.reduce(
     (n, s, i) => (i > 0 && s !== trail.statuses[i - 1] ? n + 1 : n),

@@ -41,6 +41,3 @@ export const statusColor = (status: LinkStatus): RGBA =>
   PALETTES[activeMapStyle][status];
 
 export const heatmapBaseAlpha = (): number => HEATMAP_ALPHA[activeMapStyle];
-
-export const radiusFromConfidence = (confInt: number): number =>
-  70 + (1 - confInt) * 100;

@@ -26,7 +26,7 @@ import {
   TypeLegend,
   countByStatus,
   countStale,
-  meanConfidence,
+  meanTrust,
 } from "@/features/hud";
 import { useEventStore, selectEventList } from "@/stores/events";
 import { useLayersStore } from "@/stores/layers";
@@ -86,7 +86,7 @@ export const App = () => {
   }, [trailsLayers, heatmapLayers, linkLayers]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
-  const meanConf = useMemo(() => meanConfidence(events), [events]);
+  const meanTrustVal = useMemo(() => meanTrust(events), [events]);
   const delayedCount = useMemo(() => countStale(events), [events]);
 
   const selectedUid = useSelectionStore((s) => s.selectedUid);
@@ -141,13 +141,14 @@ export const App = () => {
     <div className="relative h-screen w-screen overflow-hidden bg-terminal-bg text-terminal-fg">
       <MapView layers={layers} onTrackContext={handleTrackContext} />
       <ScreenFrame />
-      <MissionHeader trackCount={events.length} meanConfidence={meanConf} />
+      <MissionHeader trackCount={events.length} meanTrust={meanTrustVal} />
       <aside className="pointer-events-auto absolute top-8 left-2 z-10 flex w-45 flex-col gap-2">
         <LayerTogglePanel />
         <StatusSummary
           counts={statusCounts}
           total={events.length}
           delayed={delayedCount}
+          meanTrust={meanTrustVal}
         />
       </aside>
       {!detailOpen && (

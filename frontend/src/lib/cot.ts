@@ -13,10 +13,10 @@ const DIMENSION_MAP: Record<string, Dimension> = {
 export const parseDimension = (cotType: string): Dimension =>
   DIMENSION_MAP[cotType.split("-")[2] ?? ""] ?? "other";
 
-export const computeStatus = (confInt: number): LinkStatus => {
-  if (confInt >= 0.6) return "healthy";
-  if (confInt >= 0.3) return "degraded";
-  if (confInt >= 0.08) return "critical";
+export const computeStatus = (trustScore: number): LinkStatus => {
+  if (trustScore >= 0.6) return "healthy";
+  if (trustScore >= 0.3) return "degraded";
+  if (trustScore >= 0.08) return "critical";
   return "offline";
 };
 
@@ -27,15 +27,6 @@ export const computeStale = (
   const staleAtMs = Date.parse(staleAtIso);
   if (Number.isNaN(staleAtMs)) return false;
   return now > staleAtMs;
-};
-
-export const computeConfInt = (event: {
-  ce?: number;
-  le?: number;
-}): number => {
-  const ceFactor = event.ce ? Math.max(0.2, 1 - event.ce / 200) : 1;
-  const leFactor = event.le ? Math.max(0.2, 1 - event.le / 400) : 1;
-  return Math.min(1, Math.max(0, ceFactor * leFactor));
 };
 
 type RawCot = {
@@ -52,15 +43,16 @@ type RawCot = {
   le?: number;
   remarks?: string;
   callsign?: string;
+  trustScore?: number;
 };
 
 export const enrichCot = (raw: RawCot): CotEvent => {
-  const confInt = computeConfInt(raw);
+  const trustScore = raw.trustScore ?? 1;
   return {
     ...raw,
     dimension: parseDimension(raw.cotType),
-    confInt,
-    status: computeStatus(confInt),
+    trustScore,
+    status: computeStatus(trustScore),
     stale: computeStale(raw.staleAt),
   };
 };

@@ -46,7 +46,7 @@ const SIZE_MIN_PX = 70;
 const SIZE_MAX_PX = 220;
 
 const sizeFor = (e: CotEvent): number =>
-  SIZE_MIN_PX + (1 - e.confInt) * (SIZE_MAX_PX - SIZE_MIN_PX);
+  SIZE_MIN_PX + (1 - e.trustScore) * (SIZE_MAX_PX - SIZE_MIN_PX);
 
 export const buildHeatmapLayers = (events: CotEvent[]): Layer[] => {
   const visible = events.filter((e) => e.status !== "offline");
@@ -72,7 +72,7 @@ export const buildHeatmapLayers = (events: CotEvent[]): Layer[] => {
         return [r, g, b, alpha];
       },
       updateTriggers: {
-        getSize: visible.map((e) => e.confInt.toFixed(2)).join(","),
+        getSize: visible.map((e) => e.trustScore.toFixed(2)).join(","),
         getColor: `${mapStyle}|${visible.map((e) => e.status).join(",")}`,
       },
       parameters: {
