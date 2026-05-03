@@ -37,7 +37,7 @@ const DEFAULT_VIEWPORT: Viewport = Viewport {
 
 const OPENSKY_URL: &str = "https://opensky-network.org/api/states/all";
 const OPENSKY_POLL_SECS: u64 = 10;
-const EMIT_TICK_MS: u64 = 500;
+const EMIT_TICK_MS: u64 = 1000;
 // If a track hasn't been re-anchored by OpenSky in this many seconds,
 // stop emitting for it -- frontend will prune it shortly. Keeps trails
 // from drifting off into space when an aircraft leaves the bbox.
@@ -54,42 +54,31 @@ struct Viewport {
     east: f64,
 }
 
-// Per-unit chaos profiles -- jamming is modelled at the wire layer.
-// Each sender represents a CoT link with intrinsic noise; the
-// listener observes drops/dups/corrupts/reorders and degrades the
-// per-sender trust score naturally. The ndxml stays clean (no
-// scripted ce/le ramp), so the operator's view of "comms quality"
-// reflects real wire behaviour rather than baked-in degradation.
+// main is the no-chaos baseline scenario: clean wire, no scripted
+// drops/dups/corrupts/reorders. Demo branches (feat/scripted-data-jam,
+// feat/fire-and-maneuver-scenario) override these with active chaos
+// profiles so jamming can be visualised.
+const NO_CHAOS: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.0,
+    duplicate_threshold: 0.0,
+    corrupt_threshold: 0.0,
+    reorder_threshold: 0.0,
+    burst_probability: 0.0,
+    burst_max: 3,
+};
 
-// unit_a: moderate instability
-const UNIT_A_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.20,
-    duplicate_threshold: 0.40,
-    corrupt_threshold: 0.55,
-    reorder_threshold: 0.75,
-    burst_probability: 0.30,
+const HEAVY_JAM: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.45,
+    duplicate_threshold: 0.55,
+    corrupt_threshold: 0.65,
+    reorder_threshold: 0.72,
+    burst_probability: 0.08,
     burst_max: 5,
 };
 
-// unit_b: severely degraded link
-const UNIT_B_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.40,
-    duplicate_threshold: 0.60,
-    corrupt_threshold: 0.75,
-    reorder_threshold: 0.90,
-    burst_probability: 0.55,
-    burst_max: 8,
-};
-
-// unit_c: between moderate and severely degraded
-const UNIT_C_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.30,
-    duplicate_threshold: 0.50,
-    corrupt_threshold: 0.65,
-    reorder_threshold: 0.83,
-    burst_probability: 0.42,
-    burst_max: 6,
-};
+const UNIT_A_CHAOS: ChaosConfig = NO_CHAOS;
+const UNIT_B_CHAOS: ChaosConfig = NO_CHAOS;
+const UNIT_C_CHAOS: ChaosConfig = HEAVY_JAM;
 
 #[derive(Clone, Copy)]
 struct ChaosConfig {

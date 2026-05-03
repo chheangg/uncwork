@@ -69,7 +69,7 @@ const diffEmit = (
         kind: "status",
         uid,
         summary: `${prv.status.toUpperCase()} → ${cur.status.toUpperCase()}`,
-        payload: { from: prv.status, to: cur.status, confInt: cur.confInt },
+        payload: { from: prv.status, to: cur.status, trustScore: cur.trustScore },
         dimension: cur.dimension,
         sensorType: cur.sensorType,
       });

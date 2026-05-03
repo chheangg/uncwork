@@ -3,12 +3,12 @@ import { useUtcClock } from "../hooks/use-utc-clock";
 
 type MissionHeaderProps = {
   trackCount: number;
-  meanConfidence: number;
+  meanTrust: number;
 };
 
 export const MissionHeader = ({
   trackCount,
-  meanConfidence,
+  meanTrust,
 }: MissionHeaderProps) => {
   const utc = useUtcClock();
   return (
@@ -19,7 +19,7 @@ export const MissionHeader = ({
         <CompactSlot label="AO" value={MISSION.ao} />
         <CompactSlot label="DC" value={String(MISSION.defcon)} accent />
         <CompactSlot label="TRK" value={trackCount.toString().padStart(3, "0")} />
-        <CompactSlot label="CNF" value={`${(meanConfidence * 100).toFixed(0)}%`} />
+        <CompactSlot label="TRS" value={`${(meanTrust * 100).toFixed(0)}%`} />
         <CompactSlot label="Z" value={utc} className="ml-auto" />
         <Classification text={MISSION.classification} />
       </div>

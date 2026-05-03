@@ -63,6 +63,7 @@ const toCotEvent = (m: WireMessage) => {
     le: num(m.le),
     callsign: cleanString(m.flight_number),
     remarks: cleanString(m.remarks),
+    trustScore: m.trust_score ?? 1,
   });
 };
 

@@ -24,9 +24,9 @@ export const countStale = (events: CotEvent[]): number => {
   return n;
 };
 
-export const meanConfidence = (events: CotEvent[]): number => {
+export const meanTrust = (events: CotEvent[]): number => {
   if (events.length === 0) return 0;
   let sum = 0;
-  for (const e of events) sum += e.confInt;
+  for (const e of events) sum += e.trustScore;
   return sum / events.length;
 };
