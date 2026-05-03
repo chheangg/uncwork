@@ -25,6 +25,11 @@ type WireMessage = {
 
 const RECONNECT_DELAY_MS = 1500;
 const UPSERT_FLUSH_MS = 33;
+// Sentinel UID emitted by the sender when an .ndxml playback wraps
+// back to frame 0. The frontend treats it as "drop every track and
+// link before the next loop's data starts arriving" rather than
+// rendering it as a position.
+const SCENARIO_RESET_UID = "__SCENARIO_LOOP_RESET__";
 
 const num = (v: string | null | undefined): number | undefined => {
   if (v === null || v === undefined) return undefined;
@@ -69,6 +74,7 @@ const toCotEvent = (m: WireMessage) => {
 
 export const useLiveFeed = () => {
   const upsertMany = useEventStore((s) => s.upsertMany);
+  const clearEvents = useEventStore((s) => s.clear);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
   const flushRef = useRef<number | null>(null);
@@ -117,6 +123,18 @@ export const useLiveFeed = () => {
         } catch {
           return;
         }
+        if (data.uid === SCENARIO_RESET_UID) {
+          // Drop any frames queued for this flush -- they belong to
+          // the loop we just left -- and clear every track from the
+          // event store so trails, links, and panels reset.
+          pendingRef.current = [];
+          if (flushRef.current !== null) {
+            window.clearTimeout(flushRef.current);
+            flushRef.current = null;
+          }
+          clearEvents();
+          return;
+        }
         const cot = toCotEvent(data);
         if (!cot) return;
         pendingRef.current.push(cot);
@@ -139,5 +157,5 @@ export const useLiveFeed = () => {
     connect();
 
     return teardown;
-  }, [upsertMany]);
+  }, [upsertMany, clearEvents]);
 };

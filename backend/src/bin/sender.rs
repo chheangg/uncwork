@@ -365,6 +365,14 @@ fn run_sender(
         .as_ref()
         .map(|fs| vec![0usize; fs.len()])
         .unwrap_or_default();
+    // Number of ticks emitted in ndxml mode. Combined with the
+    // primary file length, we detect the wrap point so the loop can
+    // emit a sentinel reset event for the frontend.
+    let mut ndxml_tick_count: u64 = 0;
+    let ndxml_loop_period: u64 = ndxml_files
+        .as_ref()
+        .and_then(|fs| fs.iter().map(|f| f.len()).find(|&n| n > 0))
+        .unwrap_or(0) as u64;
 
     loop {
         // Drain any new fetches from the OpenSky thread (non-blocking).
@@ -390,12 +398,27 @@ fn run_sender(
 
             if let Some(ref files) = ndxml_files {
                 // NDXML mode: emit one message per file per tick, all files advance in parallel.
+                // unit_a is the canonical loop driver -- when its
+                // tick count wraps the file length, all units have
+                // wrapped (they share period). Emit a sentinel reset
+                // event before the next loop's frame 0 so the
+                // frontend can clear state.
+                if unit == "unit_a"
+                    && ndxml_loop_period > 0
+                    && ndxml_tick_count > 0
+                    && ndxml_tick_count % ndxml_loop_period == 0
+                {
+                    seq += 1;
+                    queue.push_back(reset_signal_xml(seq, unit, sensor_lat, sensor_lon));
+                }
+
                 for (file_msgs, idx) in files.iter().zip(ndxml_indices.iter_mut()) {
                     seq += 1;
                     let raw = &file_msgs[*idx % file_msgs.len()];
                     *idx += 1;
                     queue.push_back(inject_ndxml(raw, seq, unit, sensor_lat, sensor_lon));
                 }
+                ndxml_tick_count += 1;
             } else {
                 // ADS-B mode: extrapolate every tracked aircraft and queue CoT.
                 for ac in state.values_mut() {
@@ -584,6 +607,38 @@ fn inject_ndxml(raw: &str, seq: u64, unit: &str, sensor_lat: f64, sensor_lon: f6
     } else {
         s.replace("</event>", &format!("<remarks>{}</remarks></event>", remarks_suffix))
     }
+}
+
+// Sentinel CoT event the frontend recognizes as "scenario looped --
+// drop everything you know and start fresh". Emitted once per loop
+// boundary by unit_a only. Lat/lon are 0 so the listener's
+// lat-validity guard accepts the message; the frontend keys off the
+// uid, never renders the point.
+const SCENARIO_RESET_UID: &str = "__SCENARIO_LOOP_RESET__";
+
+fn reset_signal_xml(seq: u64, unit: &str, sensor_lat: f64, sensor_lon: f64) -> String {
+    let now = Utc::now();
+    let stale = now + chrono::Duration::seconds(60);
+    let now_str = now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let stale_str = stale.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    format!(
+        concat!(
+            r#"<event version="2.0" uid="{uid}" type="t-x-c-r" how="m-g" "#,
+            r#"time="{now}" start="{now}" stale="{stale}">"#,
+            r#"<point lat="0" lon="0" hae="0" ce="0" le="0"/>"#,
+            r#"<detail><contact callsign="RESET"/>"#,
+            r#"<sensor lat="{sensor_lat}" lon="{sensor_lon}"/>"#,
+            r#"<remarks>unit={unit} seq={seq} scenario_reset</remarks>"#,
+            r#"</detail></event>"#,
+        ),
+        uid = SCENARIO_RESET_UID,
+        now = now_str,
+        stale = stale_str,
+        sensor_lat = sensor_lat,
+        sensor_lon = sensor_lon,
+        unit = unit,
+        seq = seq,
+    )
 }
 
 fn corrupt_message(input: &str, rng: &mut impl RngExt) -> String {
