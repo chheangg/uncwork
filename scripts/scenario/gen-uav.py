@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""Generate UAV ndxml: joey's approach densified + reverse for a
-seamless smooth loop.
+"""Generate UAV ndxml: joey's data densified, combatant symbology.
 
-Joey's original 40-frame UAV files describe a one-way inbound
-approach that ends ~5 km from where it starts. Played at 1 Hz, two
-problems show up:
+Reads joey's original 40-frame UAV files from baa079b and produces:
 
-  1. Per-tick step is ~140 m -- fine but a touch jumpy at zoom.
-  2. When the sender wraps the file (frame N -> frame 0), the UAV
-     teleports 5 km diagonally across the map -- the abrupt jump
-     the operator sees as a giant green dashed line in the trail.
+  - 2x linear densification along joey's exact waypoints (per-tick
+    step ~116 m at 1 Hz emission, ~416 km/h apparent)
+  - cotType rewritten to `a-h-A-M-F-Q` so milsymbol renders the UAVs
+    as hostile combatant drones per MIL-STD-2525C
 
-Fix: densify joey's waypoints 2x (per-tick step ~70 m) AND append the
-reversed densified path so the UAV "patrols" forward then back. The
-loop wraps from the start point to itself -- zero teleport, fully
-smooth motion the entire cycle.
-
-cotType is rewritten to `a-h-A-M-F-Q` so milsymbol renders the UAVs
-as enemy combatants per MIL-STD-2525C.
+Joey's path is preserved exactly -- this is just smoother sampling
+of his trajectory.
 
 Run from repo root:
   python3 scripts/scenario/gen-uav.py
@@ -82,15 +74,6 @@ def densify(pts, factor):
     return out
 
 
-def patrol_loop(pts):
-    """Forward path + reversed path (skipping the duplicate endpoint
-    so the seam doesn't stutter). The final frame matches the first
-    frame, so the sender's wrap is a zero-distance transition."""
-    if len(pts) < 2:
-        return list(pts)
-    return list(pts) + list(reversed(pts[:-1]))
-
-
 def fmt_iso(secs):
     secs = int(round(secs))
     h = 12 + secs // 3600
@@ -118,11 +101,9 @@ def write_uav(filename):
     if not pts:
         raise RuntimeError(f"no points parsed from {filename}")
     dense = densify(pts, DENSIFY_FACTOR)
-    full = patrol_loop(dense)
-    lines = [event_xml(p, i) for i, p in enumerate(full)]
+    lines = [event_xml(p, i) for i, p in enumerate(dense)]
     (REPO_ROOT / filename).write_text("\n".join(lines) + "\n")
-    print(f"wrote {filename}: {len(pts)} -> {len(dense)} dense -> "
-          f"{len(full)} total (forward+reverse, loop is seamless)")
+    print(f"wrote {filename}: {len(pts)} -> {len(dense)} densified frames")
 
 
 def main():
