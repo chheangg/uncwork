@@ -57,7 +57,7 @@ export const generateMockScenario = (): CotEvent[] => {
       uid: "replay-sensor-02",
       lat: centerLat + spanLat * 0.25,
       lon: centerLon + spanLon * 0.25,
-      sensorType: "eo" as const,
+      sensorType: "eo_ir" as const,
       healthDecay: 0.001,
     },
   ];

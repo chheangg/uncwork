@@ -4,6 +4,7 @@ import type { Dimension, LinkStatus } from "@/types/cot";
 import type { TrackPath } from "@/lib/track-path";
 import { positionAt } from "@/lib/track-path";
 import { sensorLabel } from "@/lib/sensor";
+import { useLayersStore } from "@/stores/layers";
 import type { AugmentedEvent } from "../hooks/use-affected-augment";
 import { statusColor } from "./link-style";
 import { iconFor } from "./icons";
@@ -68,7 +69,10 @@ export const buildLinkLayers = (
   paths: Track[],
   renderTime: number,
   animTime: number,
-): Layer[] => [
+): Layer[] => {
+  const mapStyle = useLayersStore.getState().mapStyle;
+  const statusKeyForTrigger = paths.map((p) => p.latest.status).join(",");
+  return [
   new LineLayer<Track>({
     id: "link-pole",
     data: paths,
@@ -84,6 +88,7 @@ export const buildLinkLayers = (
     updateTriggers: {
       getSourcePosition: renderTime,
       getTargetPosition: renderTime,
+      getColor: `${mapStyle}|${statusKeyForTrigger}`,
     },
   }),
   new IconLayer<Track>({
@@ -153,6 +158,8 @@ export const buildLinkLayers = (
     characterSet: "auto",
     updateTriggers: {
       getPosition: renderTime,
+      getBackgroundColor: `${mapStyle}|${statusKeyForTrigger}`,
     },
   }),
-];
+  ];
+};

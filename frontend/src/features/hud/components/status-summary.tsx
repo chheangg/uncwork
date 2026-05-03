@@ -9,56 +9,52 @@ type StatusSummaryProps = {
 };
 
 const ORDER: { key: LinkStatus; label: string; bar: string; text: string }[] = [
-  { key: "healthy", label: "Healthy", bar: "bg-terminal-green", text: "text-terminal-green" },
-  { key: "degraded", label: "Degraded", bar: "bg-terminal-yellow", text: "text-terminal-yellow" },
-  { key: "critical", label: "Critical", bar: "bg-terminal-hot", text: "text-terminal-hot" },
-  { key: "offline", label: "Offline", bar: "bg-terminal-gray", text: "text-terminal-gray" },
+  { key: "healthy", label: "OK", bar: "bg-terminal-green", text: "text-terminal-green" },
+  { key: "degraded", label: "DEG", bar: "bg-terminal-yellow", text: "text-terminal-yellow" },
+  { key: "critical", label: "CRT", bar: "bg-terminal-hot", text: "text-terminal-hot" },
+  { key: "offline", label: "OFF", bar: "bg-terminal-gray", text: "text-terminal-gray" },
 ];
 
 export const StatusSummary = ({ counts, total, delayed }: StatusSummaryProps) => {
   const delayedPct = total === 0 ? 0 : (delayed / total) * 100;
   return (
-    <Panel title="Link Status" hint={`${total} total`}>
-      <ul className="space-y-1">
-        {ORDER.map(({ key, label, bar, text }) => {
+    <Panel title="LNK STA" hint={`${total}`}>
+      <ul className="space-y-0.5">
+        {ORDER.map(({ key, label, text }) => {
           const n = counts[key];
           const pct = total === 0 ? 0 : (n / total) * 100;
+          const barWidth = Math.round(pct / 10);
+          const barStr = "█".repeat(barWidth) + "░".repeat(10 - barWidth);
           return (
-            <li key={key} className="text-[11px]">
-              <div className="flex items-baseline justify-between">
-                <span className={text}>{label}</span>
-                <span className="stat">
-                  {n.toString().padStart(3, "0")}{" "}
-                  <span className="text-terminal-dim">
-                    {pct.toFixed(0).padStart(2, " ")}%
-                  </span>
+            <li key={key} className="text-[9px] leading-tight">
+              <div className="flex items-baseline justify-between gap-1">
+                <span className={`${text} font-bold tracking-widest w-8`}>{label}</span>
+                <span className="stat text-[9px] tabular-nums flex-1 text-right">
+                  {n.toString().padStart(3, "0")}
                 </span>
-              </div>
-              <div className="mt-0.5 h-1 bg-terminal-border/60">
-                <div
-                  className={`h-full ${bar}`}
-                  style={{ width: `${pct}%` }}
-                />
+                <span className="text-terminal-dim text-[9px] tabular-nums w-8 text-right">
+                  {pct.toFixed(0)}%
+                </span>
+                <span className={`${text} text-[9px] font-mono tracking-tighter`}>
+                  {barStr}
+                </span>
               </div>
             </li>
           );
         })}
       </ul>
-      <div className="mt-2 border-t border-terminal-border/50 pt-1.5 text-[11px]">
-        <div className="flex items-baseline justify-between">
-          <span className="text-terminal-amber">Delayed</span>
-          <span className="stat">
-            {delayed.toString().padStart(3, "0")}{" "}
-            <span className="text-terminal-dim">
-              {delayedPct.toFixed(0).padStart(2, " ")}%
-            </span>
+      <div className="mt-1 border-t border-terminal-border/50 pt-1 text-[9px]">
+        <div className="flex items-baseline justify-between gap-1">
+          <span className="text-terminal-amber font-bold tracking-widest w-8">DLY</span>
+          <span className="stat text-[9px] tabular-nums flex-1 text-right">
+            {delayed.toString().padStart(3, "0")}
           </span>
-        </div>
-        <div className="mt-0.5 h-1 bg-terminal-border/60">
-          <div
-            className="h-full bg-terminal-amber"
-            style={{ width: `${delayedPct}%` }}
-          />
+          <span className="text-terminal-dim text-[9px] tabular-nums w-8 text-right">
+            {delayedPct.toFixed(0)}%
+          </span>
+          <span className="text-terminal-amber text-[9px] font-mono tracking-tighter">
+            {"█".repeat(Math.round(delayedPct / 10)) + "░".repeat(10 - Math.round(delayedPct / 10))}
+          </span>
         </div>
       </div>
     </Panel>

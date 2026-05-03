@@ -9,9 +9,9 @@ type PanelProps = {
 };
 
 export const Panel = ({ title, hint, className, children }: PanelProps) => (
-  <div className={cn("panel p-3 text-xs", className)}>
+  <div className={cn("panel p-2 text-[9px]", className)}>
     {(title ?? hint) && (
-      <header className="flex items-baseline justify-between mb-2">
+      <header className="flex items-baseline justify-between mb-1 gap-2">
         {title && (
           <span className="label text-terminal-accent">{title}</span>
         )}

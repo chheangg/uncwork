@@ -29,10 +29,10 @@ src/
     constants.ts           # PRESET_VIEW (Kyiv), PRESET_BBOX, MISSION, HEATMAP_MAX_ZOOM
     env.ts                 # mapbox token, style url, api host, wsUrl helper
   types/
-    cot.ts                 # Affiliation, Dimension, LinkStatus, SensorType, CotEvent
+    cot.ts                 # Dimension, LinkStatus, SensorType, CotEvent
   lib/                     # generic helpers
     cn.ts
-    cot.ts                 # parseAffiliation, parseDimension, computeStatus
+    cot.ts                 # parseDimension, computeStatus (confInt-driven),
                            # (confInt-driven), computeStale, computeConfInt,
                            # enrichCot
     sensor.ts              # SENSORS_BY_DIMENSION, sensorLabel, sensorFullName
@@ -85,12 +85,10 @@ src/
     hud/
       components/mission-header.tsx
       components/status-summary.tsx     # 4 statuses + separate "Delayed" line
-      components/affiliation-summary.tsx
       components/type-legend.tsx
       components/footer-strip.tsx
       hooks/use-utc-clock.ts
-      lib/aggregate.ts           # countByStatus, countByAffiliation, countStale,
-                                 # meanConfidence
+      lib/aggregate.ts           # countByStatus, countStale, meanConfidence
 ```
 
 **Rules**
@@ -109,7 +107,6 @@ src/
 type CotEvent = {
   uid: string;
   cotType: string;            // raw, e.g. "a-f-A-W-D"
-  affiliation: Affiliation;   // parsed from cotType[1]
   dimension: Dimension;       // parsed from cotType[2]
   sensorType: SensorType;     // sensor platform (radar/sonar/eo_ir/...)
   time: string; start: string;
@@ -135,7 +132,7 @@ type CotEvent = {
 
 `Dimension`: `air | ground | sea_surface | sea_subsurface | space | sof | sensor | other`. Mock only seeds `sensor / ground / air`; sensors are fixed-position. The `X` CoT type code maps to `"sensor"`.
 
-Affiliation is parsed but the app filters to **friendly only** in mock; live ADS-B is forced to `a-f-A-C-F` (friendly civil air) so the demo stays "track only friendly".
+This is a friendly-only C2: the `Affiliation` axis was removed entirely (type, parser, HUD panel, aggregator). cotTypes still carry the `f` in position 2 for wire compatibility, but it isn't parsed — every track is treated as friendly.
 
 `SensorType`: `radar | sonar | eo_ir | sigint | acoustic | seismic | ais | lidar | ew | adsb`. ADS-B is reserved for live feed.
 
@@ -185,7 +182,7 @@ The `.env` file lives in `frontend/` and is gitignored.
 ## Visual contract
 
 - **Pole** (`LineLayer`): from ground (lat/lon, alt=0) up to icon altitude. Color = status. Alpha tracks `confInt`.
-- **Icon** (`IconLayer`): NATO symbology. SIDC built from `Dimension` (`A`/`G`/`S`/`U`/`P`/`F`/`X` for the battle dimension) and friendly affiliation (the app filters to friendly only — see "ruled out" section). milsymbol renders an SVG per SIDC (cached); we wrap it in a nested `<svg>` so it scales to fit a 64×64 cell while preserving aspect ratio, then composite the status badge (top-right) and stale badge (bottom-right) over the same canvas. Elevated by dimension (air 220 m, space 360 m, sof 60 m, ground 25 m, surface 10 m, subsurface 5 m, sensor 8 m, other 25 m). Anchored at bottom. Bigger and brighter at high `confInt` (size 38–56, alpha 0.45–1.0). Animated alpha:
+- **Icon** (`IconLayer`): NATO symbology. SIDC built from `Dimension` (`A`/`G`/`S`/`U`/`P`/`F`/`X` for the battle dimension) with affiliation hard-coded to `F` (friendly C2). milsymbol renders an SVG per SIDC (cached); we wrap it in a nested `<svg>` so it scales to fit a 64×64 cell while preserving aspect ratio, then composite the status badge (top-right) and stale badge (bottom-right) over the same canvas. Elevated by dimension (air 220 m, space 360 m, sof 60 m, ground 25 m, surface 10 m, subsurface 5 m, sensor 8 m, other 25 m). Anchored at bottom. Bigger and brighter at high `confInt` (size 38–56, alpha 0.45–1.0). Animated alpha:
   - healthy: `base`
   - degraded: `base × (0.55 + 0.45 × sin(t·4 + uidHash))` — flicker
   - critical: `base × (0.4 + 0.5 × sin(t·5.6 + uidHash))` — faster, deeper
@@ -202,7 +199,7 @@ The `.env` file lives in `frontend/` and is gitignored.
 
 ## Right-click → detail panel
 
-`MapView` wraps `<DeckGL>` in a div with `onContextMenu`. On right-click it `preventDefault`s, computes canvas-relative `x/y`, and calls `deckRef.current.pickObject({ x, y, radius: 6, layerIds: ["link-icon"] })`. If a track is hit it bubbles `{ x, y, track: { uid, callsign } }` up via `onTrackContext`; otherwise `null`. App stores that as `ContextMenuState` and renders `TrackContextMenu` (small `panel-hot` popup at cursor with one `[ DETAIL ]` row, dismisses on Esc or any outside `mousedown`). Clicking DETAIL calls `useSelectionStore.select(uid)`. `LinkDetailPanel` renders whenever `selectedUid` resolves to a track in `trackPaths`. The right-side `AffiliationSummary` / `TypeLegend` HUD is hidden while the detail panel is open so they don't fight for the same column. Esc closes.
+`MapView` wraps `<DeckGL>` in a div with `onContextMenu`. On right-click it `preventDefault`s, computes canvas-relative `x/y`, and calls `deckRef.current.pickObject({ x, y, radius: 6, layerIds: ["link-icon"] })`. If a track is hit it bubbles `{ x, y, track: { uid, callsign } }` up via `onTrackContext`; otherwise `null`. App stores that as `ContextMenuState` and renders `TrackContextMenu` (small `panel-hot` popup at cursor with one `[ DETAIL ]` row, dismisses on Esc or any outside `mousedown`). Clicking DETAIL calls `useSelectionStore.select(uid)`. `LinkDetailPanel` renders whenever `selectedUid` resolves to a track in `trackPaths`. The right-side `TypeLegend` HUD is hidden while the detail panel is open so they don't fight for the same column. Esc closes.
 
 The detail panel is intentionally NASA-flavored: corner brackets, animated scanline, blinking `▮` cursor, status-tinted confidence bar, and a status-window strip that draws every history sample as a colored vertical tick across the 60s `TRAIL_FADE_S` window.
 
@@ -239,7 +236,7 @@ Built (in order):
 1. 3D map + pitched view + R-reset (now centered on Kyiv)
 2. Mock CoT pipeline with smooth health-driven state — restricted to sensor / ground / air, sensors are zero-velocity and only decay
 3. Pole + icon + status + stale badge + label + animated alpha
-4. Status summary (with separate "Delayed" line), affiliation summary, type legend, mission header, footer
+4. Status summary (with separate "Delayed" line), type legend, mission header, footer
 5. CRT mode, terrain, building injection
 6. 60s dashed trails with per-vertex age fade + solid head segment between previous and current point + recovery badge (✓ for 30s after a status incident clears)
 7. Live feed via WebSocket /ws
@@ -259,7 +256,7 @@ Pending (in CLAUDE.md priority):
 - Persistence beyond session.
 - Mobile responsive.
 - Settings/preferences.
-- Hostile/unknown affiliations on the map (friendly only — civil air is forced to friendly).
+- Affiliation as a concept (the type and HUD panel were removed — every track is treated as friendly).
 
 ## Dev
 
