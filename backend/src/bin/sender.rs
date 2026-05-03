@@ -94,9 +94,24 @@ const HEAVY_JAM: ChaosConfig = ChaosConfig {
     burst_max: 5,
 };
 
-const UNIT_A_CHAOS: ChaosConfig = NO_CHAOS;
-const UNIT_B_CHAOS: ChaosConfig = NO_CHAOS;
-const UNIT_C_CHAOS: ChaosConfig = HEAVY_JAM;
+// Per-(scenario, unit) chaos profile.
+//
+// uav scenario:  unit_c carries the hostile UAVs and emits a heavily
+//                jammed wire (Leer-3-shaped). FR-04 fingerprint
+//                attribution lands on unit_c → the UAV badges.
+// maneuver scenario: friendlies (TEAM-A on unit_a, TEAM-B on unit_b)
+//                are the ones being jammed by the hostile JAMMER
+//                asset. Their wire is what the classifier scores, so
+//                the fingerprint badge attaches to the friendly
+//                ground sensors.
+fn chaos_for(unit: &str, scenario: &str) -> ChaosConfig {
+    match (scenario, unit) {
+        ("uav", "unit_c") => HEAVY_JAM,
+        ("maneuver", "unit_a") => HEAVY_JAM,
+        ("maneuver", "unit_b") => HEAVY_JAM,
+        _ => NO_CHAOS,
+    }
+}
 
 #[derive(Clone, Copy)]
 struct ChaosConfig {
@@ -360,7 +375,6 @@ fn run_sender(
     unit: &str,
     bind_port: u16,
     rx: mpsc::Receiver<Vec<StateVector>>,
-    chaos: ChaosConfig,
     sensor_lat: f64,
     sensor_lon: f64,
     ndxml_files_for_unit: Option<Vec<&'static str>>,
@@ -511,7 +525,10 @@ fn run_sender(
             last_tick = now;
         }
 
-        // Apply chaos and ship whatever's queued.
+        // Apply chaos and ship whatever's queued. Chaos profile is
+        // (scenario, unit) -- recomputed each batch so a scenario
+        // switch immediately changes the wire shape.
+        let chaos = chaos_for(unit, &current_scenario);
         let mut outgoing: Vec<String> = Vec::new();
 
         while let Some(mut m) = queue.pop_front() {
@@ -598,7 +615,7 @@ fn main() {
         let speed = Arc::clone(&speed);
         thread::spawn(move || {
             run_sender(
-                "unit_a", 9001, rx_a, UNIT_A_CHAOS, UNIT_A_LAT, UNIT_A_LON,
+                "unit_a", 9001, rx_a, UNIT_A_LAT, UNIT_A_LON,
                 files_a, scenario, speed,
             )
         });
@@ -608,7 +625,7 @@ fn main() {
         let speed = Arc::clone(&speed);
         thread::spawn(move || {
             run_sender(
-                "unit_b", 9002, rx_b, UNIT_B_CHAOS, UNIT_B_LAT, UNIT_B_LON,
+                "unit_b", 9002, rx_b, UNIT_B_LAT, UNIT_B_LON,
                 files_b, scenario, speed,
             )
         });
@@ -618,7 +635,7 @@ fn main() {
         let speed = Arc::clone(&speed);
         thread::spawn(move || {
             run_sender(
-                "unit_c", 9003, rx_c, UNIT_C_CHAOS, UNIT_C_LAT, UNIT_C_LON,
+                "unit_c", 9003, rx_c, UNIT_C_LAT, UNIT_C_LON,
                 files_c, scenario, speed,
             )
         });
