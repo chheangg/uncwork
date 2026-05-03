@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { positionAt } from "@/lib/track-path";
 import type { Layer } from "@deck.gl/core";
 import { LayerTogglePanel, MapView } from "@/features/map";
-import {
-  DataSourceToggle,
-  useLiveFeed,
-  useMockFeed,
-} from "@/features/data-source";
+import { useLiveFeed } from "@/features/data-source";
 import {
   buildLinkLayers,
   useAffectedAugment,
@@ -36,12 +32,6 @@ import { useEventStore, selectEventList } from "@/stores/events";
 import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
 import { HEATMAP_MAX_ZOOM } from "@/config/constants";
-import {
-  ReplayControls,
-  usePlaybackTick,
-  useReplayEvents,
-} from "@/features/replay";
-import { useReplayStore } from "@/stores/replay";
 
 // Render slightly behind real time so we always have a future
 // history sample to interpolate toward. Mock emits at 2Hz (500ms),
@@ -50,16 +40,10 @@ import { useReplayStore } from "@/stores/replay";
 const RENDER_LAG_S = 0.6;
 
 export const App = () => {
-  useMockFeed();
   useLiveFeed();
   useDerivedLog();
-  usePlaybackTick();
 
-  const mode = useReplayStore((s) => s.mode);
-  const playhead = useReplayStore((s) => s.playhead);
-
-  const allEvents = useEventStore(selectEventList);
-  const events = useReplayEvents(allEvents);
+  const events = useEventStore(selectEventList);
   const augmentedEvents = useAffectedAugment(events);
   const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
@@ -68,9 +52,7 @@ export const App = () => {
     (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
   );
   const animTime = useAnimatedSeconds(33);
-  
-  // In replay mode, use playhead as the render time; in live mode, use animTime with lag
-  const renderTime = mode === "replay" ? playhead : animTime - RENDER_LAG_S;
+  const renderTime = animTime - RENDER_LAG_S;
 
   const heatmapActive = visible.heatmap && zoomedOut;
 
@@ -162,7 +144,6 @@ export const App = () => {
       {crt && <div className="crt-overlay" />}
       <MissionHeader trackCount={events.length} meanConfidence={meanConf} />
       <aside className="pointer-events-auto absolute top-16 left-3 z-10 flex w-72 flex-col gap-3">
-        <DataSourceToggle />
         <LayerTogglePanel />
         <StatusSummary
           counts={statusCounts}
@@ -186,7 +167,6 @@ export const App = () => {
         onDismiss={() => setContextMenu(null)}
       />
       <EventTerminal />
-      <ReplayControls />
       <FooterStrip />
     </div>
   );
