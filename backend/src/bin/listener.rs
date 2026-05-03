@@ -87,6 +87,8 @@ struct CotMessage {
     lat: Option<String>,
     lon: Option<String>,
     hae: Option<String>,
+    ce: Option<String>,
+    le: Option<String>,
     flight_number: Option<String>,
     remarks: Option<String>,
     source: String,
@@ -269,6 +271,8 @@ async fn run_udp(state: Arc<AppState>) -> std::io::Result<()> {
                     lat: data.lat,
                     lon: data.lon,
                     hae: data.hae,
+                    ce: data.ce,
+                    le: data.le,
                     flight_number: data.callsign,
                     remarks: data.remarks,
                     source: src_str,
@@ -417,6 +421,8 @@ struct CotData {
     lat: Option<String>,
     lon: Option<String>,
     hae: Option<String>,
+    ce: Option<String>,
+    le: Option<String>,
     callsign: Option<String>,
     sensor_lat: Option<f64>,
     sensor_lon: Option<f64>,
@@ -466,6 +472,8 @@ fn parse_cot(xml: &str) -> Option<CotData> {
                             "lat" => data.lat = Some(val),
                             "lon" => data.lon = Some(val),
                             "hae" => data.hae = Some(val),
+                            "ce" => data.ce = Some(val),
+                            "le" => data.le = Some(val),
                             _ => {}
                         }
                     }

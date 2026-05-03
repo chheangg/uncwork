@@ -13,6 +13,8 @@ type WireMessage = {
   lat?: string | null;
   lon?: string | null;
   hae?: string | null;
+  ce?: string | null;
+  le?: string | null;
   flight_number?: string | null;
   remarks?: string | null;
   source?: string | null;
@@ -57,6 +59,8 @@ const toCotEvent = (m: WireMessage) => {
     lat,
     lon,
     hae: num(m.hae),
+    ce: num(m.ce),
+    le: num(m.le),
     callsign: cleanString(m.flight_number),
     remarks: cleanString(m.remarks),
   });

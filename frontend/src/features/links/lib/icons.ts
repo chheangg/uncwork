@@ -13,20 +13,53 @@ const SIZE = 64;
 const BADGE_SIZE = 28;
 const SYMBOL_INSET = 3;
 
-// MIL-STD-2525C SIDC per dimension. Position 2 is hard-coded to F
-// (Friend) -- this is a friendly-only C2 console.
-//
-// Position 3 is the battle dimension code; positions 5-10 are the
-// function ID. milsymbol pads short SIDCs to 15 chars internally.
-const SIDC_BY_DIMENSION: Record<Dimension, string> = {
-  air: "SFAPMF----",      // Air, military fixed wing
-  ground: "SFGPU-----",   // Ground unit, generic
-  sea_surface: "SFSPC-----",   // Sea surface combatant
-  sea_subsurface: "SFUPS-----", // Sub-surface, submarine
-  space: "SFPPS-----",    // Space track
-  sof: "SFFPU-----",      // Special operations unit
-  sensor: "SFGPESR---",   // Ground equipment, sensor, radar
-  other: "SFGPU-----",    // Fallback to generic ground unit
+// MIL-STD-2525C SIDC characters.
+// Position 1 is the standard ID code (S = warfighting). Position 2 is
+// the affiliation; we map cotType[1] (f / h / n / u / a / s / j / k)
+// to the milsymbol char (F / H / N / U / A / S / J / K). Position 3 is
+// the battle dimension; positions 5-10 are the function ID derived
+// from the rest of the cotType. Anything missing is padded with '-'.
+const AFFILIATION_CHAR: Record<string, string> = {
+  f: "F", h: "H", n: "N", u: "U",
+  a: "A", s: "S", j: "J", k: "K",
+};
+
+const DIMENSION_CHAR: Record<Dimension, string> = {
+  air: "A",
+  ground: "G",
+  sea_surface: "S",
+  sea_subsurface: "U",
+  space: "P",
+  sof: "F",
+  sensor: "G",
+  other: "G",
+};
+
+// Per-dimension fallback function ID used when cotType has no extra
+// codes past the dimension char (e.g. `a-f-G-U-C` -> "UC" + padded;
+// `a-h-A` -> default air function).
+const DEFAULT_FN: Record<Dimension, string> = {
+  air: "MF",     // military fixed wing
+  ground: "U",   // ground unit, generic
+  sea_surface: "C",   // surface combatant
+  sea_subsurface: "S",
+  space: "S",
+  sof: "U",
+  sensor: "ESR",
+  other: "U",
+};
+
+const padFn = (fn: string): string => (fn + "------").slice(0, 6);
+
+const buildSidc = (cotType: string, dimension: Dimension): string => {
+  const parts = cotType.split("-");
+  const affChar = AFFILIATION_CHAR[parts[1] ?? "f"] ?? "F";
+  const dimChar = DIMENSION_CHAR[dimension];
+  // cotType is e.g. "a-h-A-M-F-Q" -> function code = "MFQ"
+  // or "a-f-G-U-C" -> function code = "UC"
+  const fnRaw = parts.slice(3).join("");
+  const fn = fnRaw.length > 0 ? fnRaw : DEFAULT_FN[dimension];
+  return `S${affChar}${dimChar}P${padFn(fn)}`;
 };
 
 type SymbolGeom = { inner: string; viewBox: string };
@@ -82,13 +115,14 @@ const renderStaleBadge = (stale: boolean): string => {
 };
 
 const buildSvg = (
+  cotType: string,
   dimension: Dimension,
   status: LinkStatus,
   recovery: boolean,
   stale: boolean,
   inline: boolean,
 ): string => {
-  const sidc = SIDC_BY_DIMENSION[dimension];
+  const sidc = buildSidc(cotType, dimension);
   const { inner, viewBox } = buildSymbolGeom(sidc);
   const statusBadge = renderStatusBadge(status, recovery);
   const staleBadge = renderStaleBadge(stale);
@@ -116,10 +150,10 @@ export const iconFor = (
 ): IconDef => {
   const recovery = !!event.recentlyAffected;
   const stale = !!event.stale;
-  const key = `${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}:${stale ? "late" : "ontime"}`;
+  const key = `${event.cotType}:${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}:${stale ? "late" : "ontime"}`;
   const hit = URL_CACHE.get(key);
   if (hit) return hit;
-  const svg = buildSvg(event.dimension, event.status, recovery, stale, false);
+  const svg = buildSvg(event.cotType, event.dimension, event.status, recovery, stale, false);
   const def: IconDef = {
     url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
     width: SIZE,
@@ -136,4 +170,13 @@ export const previewSvg = (
   status: LinkStatus = "healthy",
   recovery: boolean = false,
   stale: boolean = false,
-): string => buildSvg(dimension, status, recovery, stale, true);
+  cotType?: string,
+): string =>
+  buildSvg(
+    cotType ?? `a-f-${DIMENSION_CHAR[dimension]}`,
+    dimension,
+    status,
+    recovery,
+    stale,
+    true,
+  );
