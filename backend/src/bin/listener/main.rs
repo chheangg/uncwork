@@ -220,6 +220,8 @@ async fn main() -> std::io::Result<()> {
         .route("/senders", get(get_senders))
         .route("/ws", get(ws_handler))
         .route("/viewport", get(get_viewport).post(set_viewport))
+        .route("/scenarios", get(get_scenarios))
+        .route("/scenarios/active", axum::routing::post(set_active_scenario))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -509,6 +511,75 @@ async fn get_senders(State(state): State<Arc<AppState>>) -> Json<Vec<SenderRespo
 
 async fn get_viewport(State(state): State<Arc<AppState>>) -> Json<Viewport> {
     Json(*state.viewport.read().await)
+}
+
+#[derive(Serialize)]
+struct ScenarioListResponse {
+    active: String,
+    available: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct ScenarioSetRequest {
+    name: String,
+}
+
+const SCENARIO_DIR: &str = "scenarios";
+const SCENARIO_DEFAULT: &str = "uav";
+const SCENARIO_ACTIVE_FILE: &str = "scenarios/.active";
+
+fn list_available_scenarios() -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(SCENARIO_DIR)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter(|n| !n.starts_with('.'))
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
+fn read_active_scenario() -> String {
+    std::fs::read_to_string(SCENARIO_ACTIVE_FILE)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| SCENARIO_DEFAULT.to_string())
+}
+
+async fn get_scenarios() -> Json<ScenarioListResponse> {
+    Json(ScenarioListResponse {
+        active: read_active_scenario(),
+        available: list_available_scenarios(),
+    })
+}
+
+async fn set_active_scenario(
+    Json(req): Json<ScenarioSetRequest>,
+) -> Result<Json<ScenarioListResponse>, (axum::http::StatusCode, String)> {
+    let available = list_available_scenarios();
+    if !available.iter().any(|s| s == &req.name) {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("unknown scenario: {}", req.name),
+        ));
+    }
+    if let Err(e) = std::fs::write(SCENARIO_ACTIVE_FILE, req.name.as_bytes()) {
+        return Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write {}: {}", SCENARIO_ACTIVE_FILE, e),
+        ));
+    }
+    println!("[scenario] active scenario set to {}", req.name);
+    Ok(Json(ScenarioListResponse {
+        active: req.name,
+        available,
+    }))
 }
 
 async fn set_viewport(

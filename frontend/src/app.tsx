@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { positionAt } from "@/lib/track-path";
 import type { Layer } from "@deck.gl/core";
 import { LayerTogglePanel, MapView } from "@/features/map";
+import { ScenarioSwitcher } from "@/features/scenarios";
 import { useLiveFeed } from "@/features/data-source";
 import {
   buildLinkLayers,
@@ -141,6 +142,7 @@ export const App = () => {
       <ScreenFrame />
       <MissionHeader trackCount={events.length} meanTrust={meanTrustVal} />
       <aside className="pointer-events-auto absolute top-8 left-2 z-10 flex w-45 flex-col gap-2">
+        <ScenarioSwitcher />
         <LayerTogglePanel />
         <StatusSummary
           counts={statusCounts}

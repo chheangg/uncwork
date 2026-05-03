@@ -1,0 +1,76 @@
+import { useCallback, useEffect, useState } from "react";
+import { httpUrl } from "@/config/env";
+
+export type ScenarioList = {
+  active: string;
+  available: string[];
+};
+
+const REFRESH_MS = 2000;
+
+// Polls the listener for the active scenario name + the list of
+// available scenarios on disk. Includes a setter that POSTs the new
+// active scenario; the sender picks up the change via its own poller
+// and emits a reset signal so the frontend clears.
+export const useScenarios = (): {
+  list: ScenarioList | null;
+  setActive: (name: string) => Promise<void>;
+  pending: string | null;
+  error: string | null;
+} => {
+  const [list, setList] = useState<ScenarioList | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch(httpUrl("/scenarios"));
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as ScenarioList;
+      setList(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    refresh();
+    const id = window.setInterval(() => {
+      if (cancelled) return;
+      refresh();
+    }, REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [refresh]);
+
+  const setActive = useCallback(
+    async (name: string) => {
+      setPending(name);
+      try {
+        const res = await fetch(httpUrl("/scenarios/active"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`status ${res.status}: ${text}`);
+        }
+        const data = (await res.json()) as ScenarioList;
+        setList(data);
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setPending(null);
+      }
+    },
+    [],
+  );
+
+  return { list, setActive, pending, error };
+};
