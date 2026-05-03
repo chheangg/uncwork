@@ -650,6 +650,7 @@ async fn get_scenarios() -> Json<ScenarioListResponse> {
 }
 
 async fn set_active_scenario(
+    State(state): State<Arc<AppState>>,
     Json(req): Json<ScenarioSetRequest>,
 ) -> Result<Json<ScenarioListResponse>, (axum::http::StatusCode, String)> {
     let available = list_available_scenarios();
@@ -659,6 +660,7 @@ async fn set_active_scenario(
             format!("unknown scenario: {}", req.name),
         ));
     }
+    let prior = read_active_scenario();
     if let Err(e) = std::fs::write(SCENARIO_ACTIVE_FILE, req.name.as_bytes()) {
         return Err((
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -666,6 +668,19 @@ async fn set_active_scenario(
         ));
     }
     println!("[scenario] active scenario set to {}", req.name);
+
+    // On a real switch, drop the per-source trust + signal counters
+    // so the FR-04 fingerprint classifier scores the *new* scenario's
+    // wire shape rather than blending it with whatever was just
+    // playing. Sender keeps its UDP socket bound to the same port,
+    // so addrs are reused; the maps would otherwise hold prior-EMA
+    // baselines for ~30-60s.
+    if prior != req.name {
+        state.trust.write().await.clear();
+        state.signals.write().await.clear();
+        println!("[scenario] cleared trust + signals state for fresh classifier baseline");
+    }
+
     Ok(Json(current_scenario_state()))
 }
 
