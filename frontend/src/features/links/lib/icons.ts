@@ -1,5 +1,10 @@
 import ms from "milsymbol";
-import type { CotEvent, Dimension, LinkStatus } from "@/types/cot";
+import type {
+  Affiliation,
+  CotEvent,
+  Dimension,
+  LinkStatus,
+} from "@/types/cot";
 
 export type IconDef = {
   url: string;
@@ -13,20 +18,43 @@ const SIZE = 64;
 const BADGE_SIZE = 28;
 const SYMBOL_INSET = 3;
 
-// MIL-STD-2525C SIDC per dimension. Position 2 is hard-coded to F
-// (Friend) -- this is a friendly-only C2 console.
+// MIL-STD-2525C SIDC: position 2 is affiliation; position 3 is
+// dimension; positions 5+ are the function code. milsymbol pads
+// short SIDCs to 15 chars.
 //
-// Position 3 is the battle dimension code; positions 5-10 are the
-// function ID. milsymbol pads short SIDCs to 15 chars internally.
-const SIDC_BY_DIMENSION: Record<Dimension, string> = {
-  air: "SFAPMF----",      // Air, military fixed wing
-  ground: "SFGPU-----",   // Ground unit, generic
-  sea_surface: "SFSPC-----",   // Sea surface combatant
-  sea_subsurface: "SFUPS-----", // Sub-surface, submarine
-  space: "SFPPS-----",    // Space track
-  sof: "SFFPU-----",      // Special operations unit
-  sensor: "SFGPESR---",   // Ground equipment, sensor, radar
-  other: "SFGPU-----",    // Fallback to generic ground unit
+// We build the SIDC from the cotType directly so the function code
+// (combat infantry, HQ, EW jammer, etc.) carries through to the
+// rendered symbol. Examples:
+//   a-f-G-U-C-I  -> SFGPUCI----  friendly combat infantry
+//   a-f-G-U-H    -> SFGPUH-----  friendly HQ
+//   a-h-G-U-C    -> SHGPUC-----  hostile combat unit
+//   a-h-G-E-W-J  -> SHGPEWJ----  hostile EW jammer
+//   a-f-A-M-F-M  -> SFAPMFM----  friendly missile
+const AFFILIATION_CHAR: Record<Affiliation, string> = {
+  friendly: "F",
+  hostile: "H",
+  unknown: "U",
+};
+
+const DIM_CHAR: Record<Dimension, string> = {
+  air: "A",
+  ground: "G",
+  sea_surface: "S",
+  sea_subsurface: "U",
+  space: "P",
+  sof: "F",
+  sensor: "G",
+  other: "G",
+};
+
+const buildSidc = (
+  cotType: string,
+  affiliation: Affiliation,
+  dimension: Dimension,
+): string => {
+  const fn = cotType.split("-").slice(3).join("");
+  const padded = (fn + "------").slice(0, 6);
+  return `S${AFFILIATION_CHAR[affiliation]}${DIM_CHAR[dimension]}P${padded}`;
 };
 
 type SymbolGeom = { inner: string; viewBox: string };
@@ -82,13 +110,15 @@ const renderStaleBadge = (stale: boolean): string => {
 };
 
 const buildSvg = (
+  cotType: string,
+  affiliation: Affiliation,
   dimension: Dimension,
   status: LinkStatus,
   recovery: boolean,
   stale: boolean,
   inline: boolean,
 ): string => {
-  const sidc = SIDC_BY_DIMENSION[dimension];
+  const sidc = buildSidc(cotType, affiliation, dimension);
   const { inner, viewBox } = buildSymbolGeom(sidc);
   const statusBadge = renderStatusBadge(status, recovery);
   const staleBadge = renderStaleBadge(stale);
@@ -116,10 +146,18 @@ export const iconFor = (
 ): IconDef => {
   const recovery = !!event.recentlyAffected;
   const stale = !!event.stale;
-  const key = `${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}:${stale ? "late" : "ontime"}`;
+  const key = `${event.cotType}:${event.affiliation}:${event.dimension}:${event.status}:${recovery ? "rec" : "norm"}:${stale ? "late" : "ontime"}`;
   const hit = URL_CACHE.get(key);
   if (hit) return hit;
-  const svg = buildSvg(event.dimension, event.status, recovery, stale, false);
+  const svg = buildSvg(
+    event.cotType,
+    event.affiliation,
+    event.dimension,
+    event.status,
+    recovery,
+    stale,
+    false,
+  );
   const def: IconDef = {
     url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
     width: SIZE,
@@ -132,8 +170,24 @@ export const iconFor = (
 };
 
 export const previewSvg = (
-  dimension: Dimension,
+  cotType: string,
   status: LinkStatus = "healthy",
   recovery: boolean = false,
   stale: boolean = false,
-): string => buildSvg(dimension, status, recovery, stale, true);
+): string => {
+  const parts = cotType.split("-");
+  const affChar = parts[1]?.toLowerCase() ?? "f";
+  const affiliation: Affiliation =
+    affChar === "f" ? "friendly" : affChar === "h" ? "hostile" : "unknown";
+  const dimChar = parts[2] ?? "G";
+  const dimMap: Record<string, Dimension> = {
+    A: "air",
+    G: "ground",
+    S: "sea_surface",
+    U: "sea_subsurface",
+    P: "space",
+    F: "sof",
+  };
+  const dimension: Dimension = dimMap[dimChar] ?? "ground";
+  return buildSvg(cotType, affiliation, dimension, status, recovery, stale, true);
+};

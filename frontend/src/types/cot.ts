@@ -1,3 +1,5 @@
+export type Affiliation = "friendly" | "hostile" | "unknown";
+
 export type Dimension =
   | "air"
   | "ground"
@@ -25,6 +27,7 @@ export type SensorType =
 export type CotEvent = {
   uid: string;
   cotType: string;
+  affiliation: Affiliation;
   dimension: Dimension;
   sensorType: SensorType;
   time: string;
