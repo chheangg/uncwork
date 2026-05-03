@@ -54,23 +54,42 @@ struct Viewport {
     east: f64,
 }
 
-// Chaos disabled for scripted scenarios. The chaos pipeline was
-// designed for ADS-B realism; for the demo it (a) corrupts random
-// bytes in the XML which can land on the uid attribute, creating
-// phantom tracks with mangled uids but the same callsign, and (b)
-// bursts duplicate messages so the WebSocket gets flooded. Both
-// fight the deterministic scripted demo.
-const NO_CHAOS: ChaosConfig = ChaosConfig {
-    drop_threshold: 0.0,
-    duplicate_threshold: 0.0,
-    corrupt_threshold: 0.0,
-    reorder_threshold: 0.0,
-    burst_probability: 0.0,
-    burst_max: 1,
+// Per-unit chaos profiles -- jamming is modelled at the wire layer.
+// Each sender represents a CoT link with intrinsic noise; the
+// listener observes drops/dups/corrupts/reorders and degrades the
+// per-sender trust score naturally. The ndxml stays clean (no
+// scripted ce/le ramp), so the operator's view of "comms quality"
+// reflects real wire behaviour rather than baked-in degradation.
+
+// unit_a: moderate instability
+const UNIT_A_CHAOS: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.20,
+    duplicate_threshold: 0.40,
+    corrupt_threshold: 0.55,
+    reorder_threshold: 0.75,
+    burst_probability: 0.30,
+    burst_max: 5,
 };
-const UNIT_A_CHAOS: ChaosConfig = NO_CHAOS;
-const UNIT_B_CHAOS: ChaosConfig = NO_CHAOS;
-const UNIT_C_CHAOS: ChaosConfig = NO_CHAOS;
+
+// unit_b: severely degraded link
+const UNIT_B_CHAOS: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.40,
+    duplicate_threshold: 0.60,
+    corrupt_threshold: 0.75,
+    reorder_threshold: 0.90,
+    burst_probability: 0.55,
+    burst_max: 8,
+};
+
+// unit_c: between moderate and severely degraded
+const UNIT_C_CHAOS: ChaosConfig = ChaosConfig {
+    drop_threshold: 0.30,
+    duplicate_threshold: 0.50,
+    corrupt_threshold: 0.65,
+    reorder_threshold: 0.83,
+    burst_probability: 0.42,
+    burst_max: 6,
+};
 
 #[derive(Clone, Copy)]
 struct ChaosConfig {
