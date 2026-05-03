@@ -16,16 +16,18 @@ use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
 
-// EMA smoothing: ~6-message time constant
-const TRUST_ALPHA: f64 = 0.15;
+// EMA smoothing: ~12-message time constant -- trust drifts slowly so
+// a single corrupt/dropped frame doesn't yank the score off a cliff.
+const TRUST_ALPHA: f64 = 0.08;
 const QUALITY_CLEAN: f64 = 0.95;
-const QUALITY_DUPLICATE: f64 = 0.40;
-const QUALITY_OUT_OF_ORDER: f64 = 0.30;
-const QUALITY_DROPPED: f64 = 0.05;
-const QUALITY_CORRUPT: f64 = 0.00;
-// Silence decay: after 20s idle, score falls at 0.97/sec
-const DECAY_THRESHOLD_SECS: f64 = 20.0;
-const DECAY_RATE_PER_SEC: f64 = 0.97;
+const QUALITY_DUPLICATE: f64 = 0.55;
+const QUALITY_OUT_OF_ORDER: f64 = 0.45;
+const QUALITY_DROPPED: f64 = 0.20;
+const QUALITY_CORRUPT: f64 = 0.10;
+// Silence decay: only kicks in after 60s of true silence, then bleeds
+// at 0.99/sec so a sender doesn't crater the moment it pauses.
+const DECAY_THRESHOLD_SECS: f64 = 60.0;
+const DECAY_RATE_PER_SEC: f64 = 0.99;
 // Neighbor influence: senders within this radius share degradation
 const NEIGHBOR_RADIUS_MILES: f64 = 5.0;
 const NEIGHBOR_INFLUENCE: f64 = 0.5;
