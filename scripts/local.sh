@@ -55,7 +55,11 @@ green "[1/4] building backend..."
 }
 
 green "[2/4] starting listener (ws :3000, udp :9999)..."
-"$BACKEND/target/release/listener" > "$LOG_DIR/listener.log" 2>&1 &
+# FR-03 neighbor radius: 500m matches the Donetsk-tactical demo and the
+# threshold-defense.md spec (Q&A card 7). For a continental ADS-B demo,
+# export NEIGHBOR_RADIUS_M=8000 before invoking this script.
+NEIGHBOR_RADIUS_M="${NEIGHBOR_RADIUS_M:-500}" \
+  "$BACKEND/target/release/listener" > "$LOG_DIR/listener.log" 2>&1 &
 PIDS+=($!)
 for i in {1..40}; do
   grep -q "HTTP/WS server" "$LOG_DIR/listener.log" 2>/dev/null && break
