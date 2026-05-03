@@ -32,10 +32,6 @@ import { useEventStore, selectEventList } from "@/stores/events";
 import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
 import { HEATMAP_MAX_ZOOM } from "@/config/constants";
-import {
-  buildAttributionLayer,
-  useFingerprintAttribution,
-} from "@/features/attribution";
 
 // Render slightly behind real time so we always have a future
 // history sample to interpolate toward. Mock emits at 2Hz (500ms),
@@ -70,17 +66,6 @@ export const App = () => {
     [trackPaths, renderTime, animTime, visible.links],
   );
 
-  // FR-04 attribution: aggregate fingerprint matches per ground asset
-  // and badge the unit's own position. Quantize the wall clock to 1 Hz
-  // so the TTL fade ticks once a second instead of dragging the rollup
-  // through every animation frame.
-  const attributionClock = Math.floor(animTime);
-  const attributions = useFingerprintAttribution(events, attributionClock * 1000);
-  const attributionLayers = useMemo(
-    () => (visible.links ? buildAttributionLayer(attributions, animTime) : []),
-    [attributions, animTime, visible.links],
-  );
-
   // Trails fade in 0.5s steps (see build-trails-layer.ts); rebuilding
   // the PathLayer object 30Hz when the fade clock only ticks at 2Hz
   // is wasted work, so memoize on the quantized clock.
@@ -97,9 +82,8 @@ export const App = () => {
     result.push(...trailsLayers);
     result.push(...heatmapLayers);
     result.push(...linkLayers);
-    result.push(...attributionLayers);
     return result;
-  }, [trailsLayers, heatmapLayers, linkLayers, attributionLayers]);
+  }, [trailsLayers, heatmapLayers, linkLayers]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
   const meanTrustVal = useMemo(() => meanTrust(events), [events]);
