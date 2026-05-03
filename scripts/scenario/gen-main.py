@@ -68,32 +68,39 @@ TEAM_HEADINGS = {
 # wants gradual motion so jam manifests purely as ce/le drift + small
 # perpendicular jitter, not as a teleport.
 # UAV interception waypoints (t_seconds, lat, lon).
-# Both UAVs sweep inbound, then circle back to overrun a friendly
-# team at the moment that team is scripted to die.
-#
-# UNKNOWN-2 -> TEAM-2 KIA at T=14s
-# TEAM-2 KIA position = base + heading * (T_KIA_TEAM2 / TICK_S)
-TEAM2_KIA_LAT = UNITS["TEAM-2"][0] + TEAM_HEADINGS["TEAM-2"][0] * (T_KIA_TEAM2 / TICK_S)
-TEAM2_KIA_LON = UNITS["TEAM-2"][1] + TEAM_HEADINGS["TEAM-2"][1] * (T_KIA_TEAM2 / TICK_S)
-
-# UNKNOWN-1 -> TEAM-1 KIA at T=18s
+# Both UAVs are synchronised:
+#   T=10..14  encircle TEAM-2 from opposite sides (UAV-1 east -> south,
+#             UAV-2 west -> north), converging on TEAM-2's KIA position
+#             at exactly T=14 -- the moment TEAM-2 dies.
+#   T=14..18  immediately fan out on parallel SW headings to overrun
+#             TEAM-1 (UAV-1) and TEAM-3 (UAV-2) at exactly T=18 -- when
+#             both die at the same time.
 TEAM1_KIA_LAT = UNITS["TEAM-1"][0] + TEAM_HEADINGS["TEAM-1"][0] * (T_KIA / TICK_S)
 TEAM1_KIA_LON = UNITS["TEAM-1"][1] + TEAM_HEADINGS["TEAM-1"][1] * (T_KIA / TICK_S)
+TEAM2_KIA_LAT = UNITS["TEAM-2"][0] + TEAM_HEADINGS["TEAM-2"][0] * (T_KIA_TEAM2 / TICK_S)
+TEAM2_KIA_LON = UNITS["TEAM-2"][1] + TEAM_HEADINGS["TEAM-2"][1] * (T_KIA_TEAM2 / TICK_S)
+TEAM3_KIA_LAT = UNITS["TEAM-3"][0] + TEAM_HEADINGS["TEAM-3"][0] * (T_KIA / TICK_S)
+TEAM3_KIA_LON = UNITS["TEAM-3"][1] + TEAM_HEADINGS["TEAM-3"][1] * (T_KIA / TICK_S)
+
+ORBIT_DLAT = 0.0030
+ORBIT_DLON = 0.0045
 
 UAV1_WAYPOINTS = [
-    (0.0,  48.455, 37.000),               # far SW, inbound
-    (8.0,  48.480, 37.055),               # NE sweep, well past targets
-    (13.0, 48.482, 37.040),               # circle-back, hooking west
-    (18.0, TEAM1_KIA_LAT, TEAM1_KIA_LON), # overruns TEAM-1 at KIA
-    (20.0, TEAM1_KIA_LAT - 0.004, TEAM1_KIA_LON - 0.006),  # exits NW
+    (0.0,  48.490, 37.080),                                    # far NE staging
+    (10.0, TEAM2_KIA_LAT,              TEAM2_KIA_LON + ORBIT_DLON),  # east of TEAM-2
+    (12.0, TEAM2_KIA_LAT - ORBIT_DLAT, TEAM2_KIA_LON),               # south of TEAM-2
+    (14.0, TEAM2_KIA_LAT,              TEAM2_KIA_LON),               # encircle/kill TEAM-2
+    (18.0, TEAM1_KIA_LAT,              TEAM1_KIA_LON),               # parallel run -> kill TEAM-1
+    (20.0, TEAM1_KIA_LAT - 0.003,      TEAM1_KIA_LON - 0.005),       # exits NW
 ]
 
 UAV2_WAYPOINTS = [
-    (0.0,  48.450, 37.010),
-    (6.0,  48.465, 37.060),               # easterly approach
-    (10.0, 48.488, 37.062),               # north hook
-    (14.0, TEAM2_KIA_LAT, TEAM2_KIA_LON), # overruns TEAM-2 at KIA
-    (20.0, TEAM2_KIA_LAT + 0.005, TEAM2_KIA_LON - 0.012),  # exits NW
+    (0.0,  48.495, 37.075),                                    # far NE-N staging
+    (10.0, TEAM2_KIA_LAT,              TEAM2_KIA_LON - ORBIT_DLON),  # west of TEAM-2 (opposite)
+    (12.0, TEAM2_KIA_LAT + ORBIT_DLAT, TEAM2_KIA_LON),               # north of TEAM-2 (opposite)
+    (14.0, TEAM2_KIA_LAT,              TEAM2_KIA_LON),               # encircle/kill TEAM-2
+    (18.0, TEAM3_KIA_LAT,              TEAM3_KIA_LON),               # parallel run -> kill TEAM-3
+    (20.0, TEAM3_KIA_LAT - 0.003,      TEAM3_KIA_LON - 0.005),       # exits NW
 ]
 
 # Impact point for MSL-1 -- intercept UAV-1 at T=12s along its nominal
