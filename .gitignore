@@ -16,3 +16,7 @@ Thumbs.db
 node_modules/
 dist/
 target/
+
+# scenario runtime state (rewritten every click; defaults live in code)
+scenarios/.active
+scenarios/.speed
