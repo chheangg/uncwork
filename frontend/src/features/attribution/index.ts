@@ -1,6 +1,8 @@
-// FR-04 fingerprint surface lives entirely in the telemetry detail
-// panel now (see features/links/components/link-detail-panel.tsx).
-// The only thing left in this feature is the colour-tone helper that
-// the panel re-uses to grade the catalog match by confidence.
+// FR-04 fingerprint surface: the detail panel chip, plus the
+// per-link attribution badge on the map. The badge follows the
+// transmitting ground unit's own track (via positionAt — no hardcoded
+// coordinates) and uses the same confidence-keyed red gradient as the
+// panel chip.
 export { fingerprintTone } from "./lib/fingerprint-tone";
 export type { FingerprintTone } from "./lib/fingerprint-tone";
+export { buildAttributionLayer } from "./lib/build-attribution-layer";

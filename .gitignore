@@ -20,6 +20,8 @@ target/
 # scenario runtime state (rewritten every click; defaults live in code)
 scenarios/.active
 scenarios/.speed
+scenarios/.paused
+scenarios/.restart_seq
 
 # scenario regen backups
 *.ndxml.bak

@@ -56,14 +56,20 @@ const statusAlpha = (
       alpha = base * (0.55 + 0.45 * Math.sin(phase));
       break;
     case "critical":
-      alpha = base * (0.4 + 0.5 * Math.sin(phase * 1.4));
+      alpha = base * (0.45 + 0.4 * Math.sin(phase * 1.4));
       break;
     case "offline":
       alpha = 0.3;
       break;
   }
-  return stale ? alpha * 0.85 : alpha;
+  const result = stale ? alpha * 0.85 : alpha;
+  return Math.max(0.05, result);
 };
+
+// Flat fill for the link label background when the operator is in
+// "naive" mode — no trust-driven status colors, just a neutral chip.
+// Picks one tone that reads on both topo and satellite basemaps.
+const NAIVE_LABEL_BG: [number, number, number] = [60, 70, 90];
 
 export const buildLinkLayers = (
   paths: Track[],
@@ -71,6 +77,7 @@ export const buildLinkLayers = (
   animTime: number,
 ): Layer[] => {
   const mapStyle = useLayersStore.getState().mapStyle;
+  const viewMode = useLayersStore.getState().viewMode;
   const statusKeyForTrigger = paths.map((p) => p.latest.status).join(",");
   return [
   new LineLayer<Track>({
@@ -136,6 +143,9 @@ export const buildLinkLayers = (
     getPosition: (p) => elevatedAt(p, renderTime),
     getText: (p) => {
       const id = p.latest.callsign ?? sensorLabel(p.latest.sensorType);
+      // In naive mode, hide the trust % suffix — the operator is
+      // looking at the same map without our system.
+      if (viewMode === "naive") return id;
       return `${id}  ${Math.round(p.latest.trustScore * 100)}%`;
     },
     getSize: 13,
@@ -146,6 +156,10 @@ export const buildLinkLayers = (
     background: true,
     backgroundPadding: [7, 3, 7, 3],
     getBackgroundColor: (p) => {
+      if (viewMode === "naive") {
+        const [r, g, b] = NAIVE_LABEL_BG;
+        return [r, g, b, 220];
+      }
       const [r, g, b] = statusColor(p.latest.status);
       return [r, g, b, 220];
     },
@@ -158,7 +172,8 @@ export const buildLinkLayers = (
     characterSet: "auto",
     updateTriggers: {
       getPosition: renderTime,
-      getBackgroundColor: `${mapStyle}|${statusKeyForTrigger}`,
+      getText: viewMode,
+      getBackgroundColor: `${mapStyle}|${viewMode}|${statusKeyForTrigger}`,
     },
   }),
   ];

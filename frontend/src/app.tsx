@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { positionAt } from "@/lib/track-path";
 import type { Layer } from "@deck.gl/core";
 import { LayerTogglePanel, MapView } from "@/features/map";
-import { ScenarioSwitcher } from "@/features/scenarios";
+import {
+  PlaybackPanel,
+  WalkthroughOverlay,
+  useWalkthroughDriver,
+} from "@/features/walkthrough";
+import { RecommenderPanel } from "@/features/recommender";
 import { useLiveFeed } from "@/features/data-source";
 import {
   buildLinkLayers,
@@ -11,6 +16,7 @@ import {
   LinkDetailPanel,
   type ContextMenuState,
 } from "@/features/links";
+import { buildAttributionLayer } from "@/features/attribution";
 import { EventTerminal, useDerivedLog } from "@/features/terminal";
 import { useSelectionStore } from "@/stores/selection";
 import { buildHeatmapLayers } from "@/features/heatmap";
@@ -42,11 +48,13 @@ const RENDER_LAG_S = 0.6;
 export const App = () => {
   useLiveFeed();
   useDerivedLog();
+  useWalkthroughDriver();
 
   const events = useEventStore(selectEventList);
   const augmentedEvents = useAffectedAugment(events);
   const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
+  const viewMode = useLayersStore((s) => s.viewMode);
   const zoomedOut = useViewStateStore(
     (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
   );
@@ -66,6 +74,14 @@ export const App = () => {
     [trackPaths, renderTime, animTime, visible.links],
   );
 
+  const attributionLayers = useMemo(
+    () =>
+      visible.links && viewMode === "operator"
+        ? buildAttributionLayer(trackPaths, renderTime, animTime)
+        : [],
+    [trackPaths, renderTime, animTime, visible.links, viewMode],
+  );
+
   // Trails fade in 0.5s steps (see build-trails-layer.ts); rebuilding
   // the PathLayer object 30Hz when the fade clock only ticks at 2Hz
   // is wasted work, so memoize on the quantized clock.
@@ -82,8 +98,9 @@ export const App = () => {
     result.push(...trailsLayers);
     result.push(...heatmapLayers);
     result.push(...linkLayers);
+    result.push(...attributionLayers);
     return result;
-  }, [trailsLayers, heatmapLayers, linkLayers]);
+  }, [trailsLayers, heatmapLayers, linkLayers, attributionLayers]);
 
   const statusCounts = useMemo(() => countByStatus(events), [events]);
   const meanTrustVal = useMemo(() => meanTrust(events), [events]);
@@ -142,7 +159,7 @@ export const App = () => {
       <ScreenFrame />
       <MissionHeader trackCount={events.length} meanTrust={meanTrustVal} />
       <aside className="pointer-events-auto absolute top-8 left-2 z-10 flex w-45 flex-col gap-2">
-        <ScenarioSwitcher />
+        <PlaybackPanel />
         <LayerTogglePanel />
         <StatusSummary
           counts={statusCounts}
@@ -152,8 +169,9 @@ export const App = () => {
         />
       </aside>
       {!detailOpen && (
-        <aside className="pointer-events-auto absolute top-8 right-2 z-10 flex w-45 flex-col gap-2">
+        <aside className="pointer-events-auto absolute top-8 right-2 bottom-32 z-10 flex w-72 flex-col gap-2 overflow-y-auto pr-1">
           <TypeLegend />
+          <RecommenderPanel />
         </aside>
       )}
       <LinkDetailPanel track={selectedTrack} onClose={deselect} />
@@ -165,6 +183,7 @@ export const App = () => {
         }}
         onDismiss={() => setContextMenu(null)}
       />
+      <WalkthroughOverlay />
       <EventTerminal />
       <FooterStrip />
     </div>

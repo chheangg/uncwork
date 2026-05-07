@@ -33,6 +33,8 @@ const NDXML_FILE_UAV2: &str = "uav-hostile-02.ndxml";
 // the next tick. Live next to `scenarios/`.
 const ACTIVE_SCENARIO_FILE: &str = "scenarios/.active";
 const SPEED_FILE: &str = "scenarios/.speed";
+const PAUSED_FILE: &str = "scenarios/.paused";
+const RESTART_FILE: &str = "scenarios/.restart_seq";
 const DEFAULT_SCENARIO: &str = "uav";
 const SCENARIO_POLL_MS: u64 = 500;
 
@@ -94,21 +96,49 @@ const HEAVY_JAM: ChaosConfig = ChaosConfig {
     burst_max: 5,
 };
 
-// Per-(scenario, unit) chaos profile.
+// Tick (= ndxml frame index) at which maneuver jamming kicks in.
 //
-// uav scenario:  unit_c carries the hostile UAVs and emits a heavily
-//                jammed wire (Leer-3-shaped). FR-04 fingerprint
-//                attribution lands on unit_c → the UAV badges.
-// maneuver scenario: friendlies (TEAM-A on unit_a, TEAM-B on unit_b)
-//                are the ones being jammed by the hostile JAMMER
-//                asset. Their wire is what the classifier scores, so
-//                the fingerprint badge attaches to the friendly
-//                ground sensors.
-fn chaos_for(unit: &str, scenario: &str) -> ChaosConfig {
+// The maneuver scenario data has fixed beats: Team 2 transmits a
+// `TEAM-2 FIRES MISSILE` remark at frame 70 (≈atSec 17.5) and the
+// teams transition into KIA frames at frame 150 (≈atSec 37.5).
+// The narrative requires the *jamming* to start *before* the
+// missile fires (so the GPS guidance is corrupted by EW). Setting
+// JAM_START_TICK = 48 (≈atSec 12) gives the trust EMA ~22 frames
+// to converge to LOW before the missile-fire frame at 70, and
+// matches the walkthrough's "Interference begins" stop at atSec 13.
+//
+// 4 frames per atSec at any speed (sender emits one frame per
+// 250 ms / speed; walkthrough driver scales elapsedSec by the same
+// speed), so the ratio holds regardless of the speed slider.
+const MANEUVER_JAM_START_TICK: u64 = 48;
+
+// Per-(scenario, unit, tick) chaos profile.
+//
+// uav scenario:  Team 1 (unit_a) is operating an EW system to jam the
+//                hostile drone — running the EW shows up on Team 1's
+//                own wire from the first frame. Team 3 (unit_c) sits
+//                ~250 m away, well inside the 500 m neighbor-drag
+//                radius, so its trust drops via FR-03 even though
+//                its own wire is clean. Team 2 (unit_b) is ~2.5 km
+//                away — outside the radius, stays HIGH. Eagle 1
+//                (FW-FRIEND-01) is relayed by Team 2 and inherits
+//                its clean trust.
+// maneuver scenario: Clean for the first MANEUVER_JAM_START_TICK
+//                frames (setup + flank approach). After that, both
+//                Team 1 and Team 2 flip to HEAVY_JAM — Team 2 is
+//                the dominant target; Team 1 sits close enough that
+//                it gets dragged via FR-03 even on ticks when its
+//                own wire is holding together.
+fn chaos_for(unit: &str, scenario: &str, tick: u64) -> ChaosConfig {
     match (scenario, unit) {
-        ("uav", "unit_c") => HEAVY_JAM,
-        ("maneuver", "unit_a") => HEAVY_JAM,
-        ("maneuver", "unit_b") => HEAVY_JAM,
+        ("uav", "unit_a") => HEAVY_JAM,
+        ("maneuver", "unit_a") | ("maneuver", "unit_b") => {
+            if tick >= MANEUVER_JAM_START_TICK {
+                HEAVY_JAM
+            } else {
+                NO_CHAOS
+            }
+        }
         _ => NO_CHAOS,
     }
 }
@@ -380,6 +410,8 @@ fn run_sender(
     ndxml_files_for_unit: Option<Vec<&'static str>>,
     scenario: Arc<RwLock<String>>,
     speed: Arc<RwLock<f64>>,
+    paused: Arc<RwLock<bool>>,
+    restart_seq: Arc<RwLock<u64>>,
 ) {
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", bind_port))
         .unwrap_or_else(|e| panic!("[{unit}] failed to bind port {bind_port}: {e}"));
@@ -394,6 +426,7 @@ fn run_sender(
     // Load the .ndxml files for the active scenario, then track which
     // scenario we're currently playing so we can reload on switch.
     let mut current_scenario = scenario.read().unwrap().clone();
+    let mut current_restart_seq = *restart_seq.read().unwrap();
     let mut ndxml_files: Option<Vec<Vec<String>>> =
         ndxml_files_for_unit.as_ref().map(|filenames| {
             filenames
@@ -440,7 +473,22 @@ fn run_sender(
         // Tick once per (BASE / speed) ms: queue the next message(s).
         // Speed is read every loop iteration so a slider change takes
         // effect on the next tick.
+        //
+        // While playback is paused, freeze the cursor and skip the
+        // tick body. We do NOT advance `last_tick` while paused, so
+        // resume picks up exactly where it left off — the next tick
+        // fires immediately, then resyncs to the normal cadence. No
+        // message is queued, no chaos applied, no UDP send.
         let now = Instant::now();
+        let is_paused = *paused.read().unwrap();
+        if is_paused {
+            // Slide last_tick forward while paused so the unpause
+            // doesn't trigger a giant `dt` (which would teleport
+            // ADS-B extrapolation tracks far off course).
+            last_tick = now;
+            thread::sleep(Duration::from_millis(50));
+            continue;
+        }
         let speed_now = *speed.read().unwrap();
         let tick_ms = ((EMIT_TICK_BASE_MS as f64) / speed_now.clamp(SPEED_MIN, SPEED_MAX))
             .round() as u64;
@@ -448,15 +496,28 @@ fn run_sender(
         if now.duration_since(last_tick) >= Duration::from_millis(tick_ms) {
             let dt = now.duration_since(last_tick).as_secs_f64();
 
-            // If the active scenario changed, reload .ndxml files,
-            // reset cursors, and emit a reset signal (unit_a only).
+            // If the active scenario changed OR the operator bumped
+            // the restart counter ("walk through again"), reload
+            // .ndxml files, reset cursors to frame 0, and emit a
+            // reset signal (unit_a only).
             let latest_scenario = scenario.read().unwrap().clone();
-            if latest_scenario != current_scenario && ndxml_files_for_unit.is_some() {
-                println!(
-                    "[{unit}] scenario change {} -> {}, reloading",
-                    current_scenario, latest_scenario
-                );
+            let latest_restart_seq = *restart_seq.read().unwrap();
+            let scenario_changed = latest_scenario != current_scenario;
+            let restart_bumped = latest_restart_seq != current_restart_seq;
+            if (scenario_changed || restart_bumped) && ndxml_files_for_unit.is_some() {
+                if scenario_changed {
+                    println!(
+                        "[{unit}] scenario change {} -> {}, reloading",
+                        current_scenario, latest_scenario
+                    );
+                } else {
+                    println!(
+                        "[{unit}] restart bump {} -> {}, reloading from frame 0",
+                        current_restart_seq, latest_restart_seq
+                    );
+                }
                 current_scenario = latest_scenario;
+                current_restart_seq = latest_restart_seq;
                 ndxml_files = ndxml_files_for_unit.as_ref().map(|filenames| {
                     filenames
                         .iter()
@@ -484,6 +545,23 @@ fn run_sender(
             }
 
             if let Some(ref files) = ndxml_files {
+                // The unit's *primary* ndxml file (first by main()
+                // convention) is the unit's own ground track. Pull
+                // lat/lon off its current frame and use that as the
+                // sensor position for every frame this unit emits
+                // this tick. Static scenarios (uav) read back the
+                // start coords; moving scenarios (maneuver) get a
+                // sensor position that follows the unit. Falls back
+                // to the configured constants if parsing fails.
+                let (tick_sensor_lat, tick_sensor_lon) = files
+                    .first()
+                    .and_then(|first| {
+                        let i = ndxml_indices.first().copied().unwrap_or(0);
+                        let raw = first.get(i % first.len())?;
+                        read_lat_lon(raw)
+                    })
+                    .unwrap_or((sensor_lat, sensor_lon));
+
                 // unit_a is the canonical loop driver -- when its
                 // tick count wraps the file length, all units have
                 // wrapped (they share period). Emit a sentinel reset
@@ -495,7 +573,9 @@ fn run_sender(
                     && ndxml_tick_count % ndxml_loop_period == 0
                 {
                     seq += 1;
-                    queue.push_back(reset_signal_xml(seq, unit, sensor_lat, sensor_lon));
+                    queue.push_back(reset_signal_xml(
+                        seq, unit, tick_sensor_lat, tick_sensor_lon,
+                    ));
                 }
 
                 // NDXML mode: emit one message per file per tick, all files advance in parallel.
@@ -503,7 +583,9 @@ fn run_sender(
                     seq += 1;
                     let raw = &file_msgs[*idx % file_msgs.len()];
                     *idx += 1;
-                    queue.push_back(inject_ndxml(raw, seq, unit, sensor_lat, sensor_lon));
+                    queue.push_back(inject_ndxml(
+                        raw, seq, unit, tick_sensor_lat, tick_sensor_lon,
+                    ));
                 }
                 ndxml_tick_count += 1;
             } else {
@@ -528,10 +610,20 @@ fn run_sender(
         // Apply chaos and ship whatever's queued. Chaos profile is
         // (scenario, unit) -- recomputed each batch so a scenario
         // switch immediately changes the wire shape.
-        let chaos = chaos_for(unit, &current_scenario);
+        let chaos = chaos_for(unit, &current_scenario, ndxml_tick_count);
         let mut outgoing: Vec<String> = Vec::new();
 
         while let Some(mut m) = queue.pop_front() {
+            // The scenario-loop / scenario-switch sentinel must reach
+            // the listener intact -- if HEAVY_JAM swallows it (45%
+            // drop, 65% corrupt) on a uav -> maneuver switch the
+            // frontend never sees the reset and the prior scenario's
+            // tracks ghost on the map until they age out.
+            if m.contains(SCENARIO_RESET_UID) {
+                outgoing.push(m);
+                continue;
+            }
+
             let roll: f64 = rng.random();
 
             if roll < chaos.drop_threshold {
@@ -568,7 +660,13 @@ fn run_sender(
             }
         }
 
-        thread::sleep(Duration::from_millis(50));
+        // 5ms is small enough that tick cadence stays accurate at
+        // speed 4× (tick_period = 63 ms), large enough to avoid
+        // pegging a core. Earlier this was 50 ms which floored the
+        // tick rate at higher speeds and caused the walkthrough's
+        // wall-clock-paced popups to drift ahead of the sender's
+        // actual frame advance.
+        thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -600,10 +698,20 @@ fn main() {
     let speed = Arc::new(RwLock::new(initial_speed));
     println!("[main] speed multiplier at startup: {:.2}x", initial_speed);
 
+    let initial_paused = read_paused_file().unwrap_or(false);
+    let paused = Arc::new(RwLock::new(initial_paused));
+    println!("[main] paused at startup: {}", initial_paused);
+
+    let initial_restart = read_restart_seq_file().unwrap_or(0);
+    let restart_seq = Arc::new(RwLock::new(initial_restart));
+    println!("[main] restart_seq at startup: {}", initial_restart);
+
     {
         let scenario = Arc::clone(&scenario);
         let speed = Arc::clone(&speed);
-        thread::spawn(move || run_scenario_poller(scenario, speed));
+        let paused = Arc::clone(&paused);
+        let restart_seq = Arc::clone(&restart_seq);
+        thread::spawn(move || run_scenario_poller(scenario, speed, paused, restart_seq));
     }
 
     let (_tx_a, rx_a) = mpsc::channel::<Vec<StateVector>>();
@@ -613,30 +721,36 @@ fn main() {
     {
         let scenario = Arc::clone(&scenario);
         let speed = Arc::clone(&speed);
+        let paused = Arc::clone(&paused);
+        let restart_seq = Arc::clone(&restart_seq);
         thread::spawn(move || {
             run_sender(
                 "unit_a", 9001, rx_a, UNIT_A_LAT, UNIT_A_LON,
-                files_a, scenario, speed,
+                files_a, scenario, speed, paused, restart_seq,
             )
         });
     }
     {
         let scenario = Arc::clone(&scenario);
         let speed = Arc::clone(&speed);
+        let paused = Arc::clone(&paused);
+        let restart_seq = Arc::clone(&restart_seq);
         thread::spawn(move || {
             run_sender(
                 "unit_b", 9002, rx_b, UNIT_B_LAT, UNIT_B_LON,
-                files_b, scenario, speed,
+                files_b, scenario, speed, paused, restart_seq,
             )
         });
     }
     {
         let scenario = Arc::clone(&scenario);
         let speed = Arc::clone(&speed);
+        let paused = Arc::clone(&paused);
+        let restart_seq = Arc::clone(&restart_seq);
         thread::spawn(move || {
             run_sender(
                 "unit_c", 9003, rx_c, UNIT_C_LAT, UNIT_C_LON,
-                files_c, scenario, speed,
+                files_c, scenario, speed, paused, restart_seq,
             )
         });
     }
@@ -671,11 +785,28 @@ fn read_speed_file() -> Option<f64> {
     }
 }
 
+fn read_paused_file() -> Option<bool> {
+    let path = find_repo_path(PAUSED_FILE)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    Some(content.trim() == "1")
+}
+
+fn read_restart_seq_file() -> Option<u64> {
+    let path = find_repo_path(RESTART_FILE)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    content.trim().parse::<u64>().ok()
+}
+
 // Polls the marker files on disk and pushes any change into the
 // shared state. The listener writes the marker files when the
 // frontend POSTs the corresponding endpoint, which makes the poller
 // a thin bridge between the two processes.
-fn run_scenario_poller(scenario: Arc<RwLock<String>>, speed: Arc<RwLock<f64>>) {
+fn run_scenario_poller(
+    scenario: Arc<RwLock<String>>,
+    speed: Arc<RwLock<f64>>,
+    paused: Arc<RwLock<bool>>,
+    restart_seq: Arc<RwLock<u64>>,
+) {
     loop {
         thread::sleep(Duration::from_millis(SCENARIO_POLL_MS));
         if let Some(on_disk) = read_active_scenario_file() {
@@ -693,6 +824,26 @@ fn run_scenario_poller(scenario: Arc<RwLock<String>>, speed: Arc<RwLock<f64>>) {
                     current, on_disk
                 );
                 *speed.write().unwrap() = on_disk;
+            }
+        }
+        if let Some(on_disk) = read_paused_file() {
+            let current = *paused.read().unwrap();
+            if on_disk != current {
+                println!(
+                    "[poller] paused change on disk: {} -> {}",
+                    current, on_disk
+                );
+                *paused.write().unwrap() = on_disk;
+            }
+        }
+        if let Some(on_disk) = read_restart_seq_file() {
+            let current = *restart_seq.read().unwrap();
+            if on_disk != current {
+                println!(
+                    "[poller] restart bump on disk: {} -> {}",
+                    current, on_disk
+                );
+                *restart_seq.write().unwrap() = on_disk;
             }
         }
     }
@@ -789,6 +940,25 @@ fn reset_signal_xml(seq: u64, unit: &str, sensor_lat: f64, sensor_lon: f64) -> S
     )
 }
 
+// Read a numeric XML attribute (lat/lon/etc.) out of a raw event
+// string. Returns None if the attribute isn't present or doesn't
+// parse as f64. Used to derive a unit's *current* transmitter
+// position from its primary ndxml track each tick, so the sensor
+// lat/lon stamped onto outbound frames follows the unit instead of
+// staying pinned at the unit's start coords.
+fn read_xml_attr_f64(s: &str, attr: &str) -> Option<f64> {
+    let pattern = format!("{}=\"", attr);
+    let val_start = s.find(&pattern)? + pattern.len();
+    let end_offset = s[val_start..].find('"')?;
+    s[val_start..val_start + end_offset].parse().ok()
+}
+
+fn read_lat_lon(s: &str) -> Option<(f64, f64)> {
+    let lat = read_xml_attr_f64(s, "lat")?;
+    let lon = read_xml_attr_f64(s, "lon")?;
+    Some((lat, lon))
+}
+
 // Replace the value of a single XML attribute (first occurrence only).
 fn replace_xml_attr(s: &str, attr: &str, value: &str) -> String {
     let pattern = format!("{}=\"", attr);
@@ -829,12 +999,22 @@ fn inject_ndxml(raw: &str, seq: u64, unit: &str, sensor_lat: f64, sensor_lon: f6
 }
 
 fn corrupt_message(input: &str, rng: &mut impl RngExt) -> String {
-    let mut bytes = input.as_bytes().to_vec();
+    // Corrupt the `<point lat="...">` attribute name so the listener's
+    // parse_cot rejects the message (data.lat = None → None return →
+    // CRC-breach signal). Targeting `lat=` keeps the uid intact, so
+    // corruption never spawns ghost tracks on the frontend the way a
+    // random-byte flip used to.
+    if let Some(start) = input.find("lat=\"") {
+        let mut bytes = input.as_bytes().to_vec();
+        let offset = rng.random_range(0..3);
+        bytes[start + offset] = b'X';
+        return String::from_utf8_lossy(&bytes).to_string();
+    }
 
+    let mut bytes = input.as_bytes().to_vec();
     if !bytes.is_empty() {
         let idx = rng.random_range(0..bytes.len());
         bytes[idx] = b'X';
     }
-
     String::from_utf8_lossy(&bytes).to_string()
 }

@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Boot the whole stack locally (no ngrok). Frontend talks to backend
 # via localhost defaults. Cleanup on exit / Ctrl+C.
+#
+# Secrets:
+#   backend/.env       (gitignored) — sourced before launching the
+#                                     listener. Stuff like
+#                                     GEMINI_API_KEY belongs here.
+#   backend/.env.example                             — template, tracked.
+#   frontend/.env      (gitignored) — VITE_MAPBOX_TOKEN etc. Vite
+#                                     loads this directly; nothing to
+#                                     do here besides existence-check.
 
 set -euo pipefail
 
@@ -22,6 +31,19 @@ require() {
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 require cargo
 require pnpm
+
+# Source backend/.env if present so secrets like GEMINI_API_KEY land
+# in this shell's environment and get inherited by the listener
+# subprocess. `set -a` auto-exports anything assigned while it's on.
+if [ -f "$BACKEND/.env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$BACKEND/.env"
+  set +a
+  dim "  loaded backend/.env"
+else
+  dim "  no backend/.env (cp backend/.env.example backend/.env to enable Gemini)"
+fi
 
 PIDS=()
 cleanup() {
@@ -55,10 +77,11 @@ green "[1/4] building backend..."
 }
 
 green "[2/4] starting listener (ws :3000, udp :9999)..."
-# FR-03 neighbor radius: 500m matches the Donetsk-tactical demo and the
-# threshold-defense.md spec (Q&A card 7). For a continental ADS-B demo,
-# export NEIGHBOR_RADIUS_M=8000 before invoking this script.
+# FR-03 neighbor radius: 500m matches the Donetsk-tactical demo and
+# threshold-defense.md spec (Q&A card 7). Override via NEIGHBOR_RADIUS_M
+# in backend/.env or by exporting before invoking this script.
 NEIGHBOR_RADIUS_M="${NEIGHBOR_RADIUS_M:-500}" \
+GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
   "$BACKEND/target/release/listener" > "$LOG_DIR/listener.log" 2>&1 &
 PIDS+=($!)
 for i in {1..40}; do
@@ -70,7 +93,13 @@ grep -q "HTTP/WS server" "$LOG_DIR/listener.log" || {
   exit 1
 }
 
-green "[3/4] starting sender (opensky -> cot xml)..."
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+  dim "  Gemini: enabled (key length ${#GEMINI_API_KEY})"
+else
+  dim "  Gemini: disabled (set GEMINI_API_KEY in backend/.env to enable)"
+fi
+
+green "[3/4] starting sender (ndxml -> cot xml)..."
 "$BACKEND/target/release/sender" > "$LOG_DIR/sender.log" 2>&1 &
 PIDS+=($!)
 

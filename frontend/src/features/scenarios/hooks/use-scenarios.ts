@@ -7,6 +7,7 @@ export type ScenarioList = {
   speed: number;
   speed_min: number;
   speed_max: number;
+  paused: boolean;
 };
 
 const REFRESH_MS = 2000;
@@ -20,6 +21,8 @@ export const useScenarios = (): {
   list: ScenarioList | null;
   setActive: (name: string) => Promise<void>;
   setSpeed: (speed: number) => Promise<void>;
+  setPaused: (paused: boolean) => Promise<void>;
+  restart: () => Promise<void>;
   pending: string | null;
   error: string | null;
 } => {
@@ -98,5 +101,42 @@ export const useScenarios = (): {
     }
   }, []);
 
-  return { list, setActive, setSpeed, pending, error };
+  const restart = useCallback(async () => {
+    try {
+      const res = await fetch(httpUrl("/scenarios/restart"), {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`status ${res.status}: ${text}`);
+      }
+      const data = (await res.json()) as ScenarioList;
+      setList(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const setPaused = useCallback(async (paused: boolean) => {
+    setList((prev) => (prev ? { ...prev, paused } : prev));
+    try {
+      const res = await fetch(httpUrl("/scenarios/paused"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paused }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`status ${res.status}: ${text}`);
+      }
+      const data = (await res.json()) as ScenarioList;
+      setList(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  return { list, setActive, setSpeed, setPaused, restart, pending, error };
 };

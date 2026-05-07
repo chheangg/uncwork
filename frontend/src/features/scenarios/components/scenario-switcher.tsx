@@ -14,7 +14,15 @@ const SPEED_STEP = 0.05;
 
 export const ScenarioSwitcher = () => {
   const { list, setActive, setSpeed, pending, error } = useScenarios();
-  if (!list) return null;
+  if (!list) {
+    return (
+      <Panel title="SCENARIO" hint={error ? "ERR" : "…"}>
+        <div className="text-[9px] text-terminal-dim">
+          {error ? `offline · ${error}` : "loading scenarios…"}
+        </div>
+      </Panel>
+    );
+  }
   const buttons = list.available.length > 0 ? list.available : [list.active];
   const speed = list.speed;
   return (

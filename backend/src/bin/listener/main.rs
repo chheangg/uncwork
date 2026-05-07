@@ -36,6 +36,7 @@
 //! live trail.
 
 mod fingerprint;
+mod recommender;
 mod signals;
 mod trust;
 
@@ -233,6 +234,9 @@ async fn main() -> std::io::Result<()> {
         .route("/scenarios", get(get_scenarios))
         .route("/scenarios/active", axum::routing::post(set_active_scenario))
         .route("/scenarios/speed", axum::routing::post(set_speed))
+        .route("/scenarios/paused", axum::routing::post(set_paused))
+        .route("/scenarios/restart", axum::routing::post(restart_scenario))
+        .route("/recommend", axum::routing::post(recommender::handle_recommend))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -582,6 +586,7 @@ struct ScenarioListResponse {
     speed: f64,
     speed_min: f64,
     speed_max: f64,
+    paused: bool,
 }
 
 #[derive(Deserialize)]
@@ -594,10 +599,17 @@ struct SpeedSetRequest {
     speed: f64,
 }
 
+#[derive(Deserialize)]
+struct PauseSetRequest {
+    paused: bool,
+}
+
 const SCENARIO_DIR: &str = "scenarios";
 const SCENARIO_DEFAULT: &str = "uav";
 const SCENARIO_ACTIVE_FILE: &str = "scenarios/.active";
 const SCENARIO_SPEED_FILE: &str = "scenarios/.speed";
+const SCENARIO_PAUSED_FILE: &str = "scenarios/.paused";
+const SCENARIO_RESTART_FILE: &str = "scenarios/.restart_seq";
 const SCENARIO_SPEED_MIN: f64 = 0.25;
 const SCENARIO_SPEED_MAX: f64 = 4.0;
 const SCENARIO_SPEED_DEFAULT: f64 = 1.0;
@@ -635,6 +647,13 @@ fn read_active_speed() -> f64 {
         .unwrap_or(SCENARIO_SPEED_DEFAULT)
 }
 
+fn read_paused() -> bool {
+    std::fs::read_to_string(SCENARIO_PAUSED_FILE)
+        .ok()
+        .map(|s| s.trim() == "1")
+        .unwrap_or(false)
+}
+
 fn current_scenario_state() -> ScenarioListResponse {
     ScenarioListResponse {
         active: read_active_scenario(),
@@ -642,6 +661,7 @@ fn current_scenario_state() -> ScenarioListResponse {
         speed: read_active_speed(),
         speed_min: SCENARIO_SPEED_MIN,
         speed_max: SCENARIO_SPEED_MAX,
+        paused: read_paused(),
     }
 }
 
@@ -701,6 +721,48 @@ async fn set_speed(
         ));
     }
     println!("[scenario] speed set to {:.2}x", clamped);
+    Ok(Json(current_scenario_state()))
+}
+
+async fn set_paused(
+    Json(req): Json<PauseSetRequest>,
+) -> Result<Json<ScenarioListResponse>, (axum::http::StatusCode, String)> {
+    let value = if req.paused { "1" } else { "0" };
+    if let Err(e) = std::fs::write(SCENARIO_PAUSED_FILE, value.as_bytes()) {
+        return Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write {}: {}", SCENARIO_PAUSED_FILE, e),
+        ));
+    }
+    println!(
+        "[scenario] playback {}",
+        if req.paused { "PAUSED" } else { "RESUMED" }
+    );
+    Ok(Json(current_scenario_state()))
+}
+
+// Bumps a monotonic counter in `scenarios/.restart_seq`. The sender's
+// poller picks up the bump and fires the same reload path as a
+// scenario change — ndxml cursors reset to frame 0, trust + signals
+// state is cleared, and unit_a emits a SCENARIO_LOOP_RESET sentinel
+// so the frontend drops every track from the prior playthrough.
+async fn restart_scenario(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ScenarioListResponse>, (axum::http::StatusCode, String)> {
+    let prev = std::fs::read_to_string(SCENARIO_RESTART_FILE)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    let next = prev.wrapping_add(1);
+    if let Err(e) = std::fs::write(SCENARIO_RESTART_FILE, format!("{}", next).as_bytes()) {
+        return Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write {}: {}", SCENARIO_RESTART_FILE, e),
+        ));
+    }
+    state.trust.write().await.clear();
+    state.signals.write().await.clear();
+    println!("[scenario] restart bump {} -> {}", prev, next);
     Ok(Json(current_scenario_state()))
 }
 

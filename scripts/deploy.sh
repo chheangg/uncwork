@@ -2,6 +2,12 @@
 # Boot the whole stack (backend + ngrok + frontend) for a public demo.
 # Two ngrok tunnels: api -> backend :3000, web -> frontend :5173.
 # Cleanup on exit / Ctrl+C.
+#
+# Secrets:
+#   backend/.env       (gitignored) — sourced before launching the
+#                                     listener. Put GEMINI_API_KEY
+#                                     etc here.
+#   backend/.env.example                             — tracked template.
 
 set -euo pipefail
 
@@ -27,6 +33,19 @@ require pnpm
 require ngrok
 require jq
 require curl
+
+# Source backend/.env so GEMINI_API_KEY (and anything else server-side)
+# lands in this shell's environment and gets inherited by the listener
+# subprocess. set -a auto-exports anything assigned while it's on.
+if [ -f "$BACKEND/.env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$BACKEND/.env"
+  set +a
+  dim "  loaded backend/.env"
+else
+  dim "  no backend/.env (cp backend/.env.example backend/.env to enable Gemini)"
+fi
 
 PIDS=()
 cleanup() {
@@ -61,7 +80,9 @@ green "[1/5] building backend..."
 }
 
 green "[2/5] starting listener (ws :3000, udp :9999)..."
-"$BACKEND/target/release/listener" > "$LOG_DIR/listener.log" 2>&1 &
+NEIGHBOR_RADIUS_M="${NEIGHBOR_RADIUS_M:-500}" \
+GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
+  "$BACKEND/target/release/listener" > "$LOG_DIR/listener.log" 2>&1 &
 PIDS+=($!)
 for i in {1..40}; do
   grep -q "HTTP/WS server" "$LOG_DIR/listener.log" 2>/dev/null && break
@@ -72,7 +93,13 @@ grep -q "HTTP/WS server" "$LOG_DIR/listener.log" || {
   exit 1
 }
 
-green "[3/5] starting sender (opensky -> cot xml)..."
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+  dim "  Gemini: enabled (key length ${#GEMINI_API_KEY})"
+else
+  dim "  Gemini: disabled (set GEMINI_API_KEY in backend/.env to enable)"
+fi
+
+green "[3/5] starting sender (ndxml -> cot xml)..."
 "$BACKEND/target/release/sender" > "$LOG_DIR/sender.log" 2>&1 &
 PIDS+=($!)
 
