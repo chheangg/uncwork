@@ -5,11 +5,15 @@ import { TRAIL_FADE_S } from "../lib/build-trails-layer";
 
 const POSITION_EPSILON = 1e-7;
 // If a track jumps farther than this between two samples, treat it
-// as a re-spawn (e.g. JAMMER toggling between STASH at 89.9°N and
-// its operating position) and start the trail fresh from the new
-// point instead of drawing a transcontinental line. 50 km is far
-// above any plausible per-tick motion in the scenarios.
-const JUMP_RESET_KM = 50;
+// as a re-spawn (loop wrap, scenario authoring glitch, or a JAMMER
+// toggling between STASH and its operating position) and start the
+// trail fresh from the new point instead of drawing a long line
+// connecting the old position to the new. 3 km is well above any
+// plausible per-tick motion (fast UAV at 250 m/s × 3× speed slider
+// ≈ 750 m/frame) and below the loop-wrap distances we observe in
+// the bundled scenarios (~3.4–5 km), so this also covers a missed
+// SCENARIO_LOOP_RESET sentinel as defense in depth.
+const JUMP_RESET_KM = 3;
 
 const haversineKm = (a: [number, number], b: [number, number]): number => {
   const R = 6371;
@@ -60,6 +64,22 @@ export const useTrackHistory = <E extends CotEvent>(
           samples: [{ t: eventTime, status: e.status }],
           latest: e,
         });
+        continue;
+      }
+
+      // Skip frames that arrive out of order (HEAVY_JAM reorder
+      // delivers older CoT times after newer ones). Appending an
+      // older position to the trail produces the visible zigzag-back
+      // pattern when the link is being jammed. The events store
+      // already filters this on ingest, but the guard here keeps the
+      // trail consistent for any future store that doesn't.
+      const incomingT = Date.parse(e.time);
+      const lastT = Date.parse(existing.latest.time);
+      if (
+        Number.isFinite(incomingT) &&
+        Number.isFinite(lastT) &&
+        incomingT < lastT
+      ) {
         continue;
       }
 

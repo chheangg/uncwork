@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { wsUrl } from "@/config/env";
 import { enrichCot, parseSenderUnit } from "@/lib/cot";
 import type { Detectors, FingerprintMatch, SensorType, SpatialClass } from "@/types/cot";
+import { useDataSourceStore } from "@/stores/data-source";
 import { useEventStore } from "@/stores/events";
 
 type WireFingerprint = {
@@ -140,6 +141,7 @@ const toCotEvent = (m: WireMessage) => {
 };
 
 export const useLiveFeed = () => {
+  const source = useDataSourceStore((s) => s.source);
   const upsertMany = useEventStore((s) => s.upsertMany);
   const clearEvents = useEventStore((s) => s.clear);
   const wsRef = useRef<WebSocket | null>(null);
@@ -149,8 +151,19 @@ export const useLiveFeed = () => {
   const cancelRef = useRef(false);
 
   useEffect(() => {
+    // Only run the live websocket when the operator is actually in
+    // "live" mode. Without this gate the WS connects on every mount
+    // and competes with the battle simulator (and the older mock
+    // feed) — both push to the same events store and you'd see live
+    // ADS-B planes over the simulated battlefield.
+    if (source !== "live") return;
     const flush = () => {
       flushRef.current = null;
+      // Same guard as the message handler — a flush scheduled before
+      // teardown can fire after teardown has ostensibly emptied the
+      // queue. If the source has flipped, drop the batch.
+      if (cancelRef.current) return;
+      if (useDataSourceStore.getState().source !== "live") return;
       const batch = pendingRef.current.filter(
         (x): x is NonNullable<typeof x> => x !== null,
       );
@@ -184,6 +197,13 @@ export const useLiveFeed = () => {
       wsRef.current = ws;
 
       ws.addEventListener("message", (event) => {
+        // Defensive: a message can land between ws.close() and the
+        // socket actually transitioning to CLOSED. Without these
+        // checks, a single late frame after the user clicks BATTLE
+        // would push a TEAM-* / EAGLE-* event back into the store and
+        // sit there next to the simulator's units.
+        if (cancelRef.current) return;
+        if (useDataSourceStore.getState().source !== "live") return;
         let data: WireMessage;
         try {
           data = JSON.parse(event.data) as WireMessage;
@@ -224,5 +244,5 @@ export const useLiveFeed = () => {
     connect();
 
     return teardown;
-  }, [upsertMany, clearEvents]);
+  }, [source, upsertMany, clearEvents]);
 };

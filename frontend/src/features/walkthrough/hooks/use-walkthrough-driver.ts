@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useScenarios } from "@/features/scenarios";
 import { useViewStateStore } from "@/stores/view-state";
+import { useDataSourceStore } from "@/stores/data-source";
+import { useEventStore, selectEventList } from "@/stores/events";
+import { useSelectionStore } from "@/stores/selection";
 import { scriptFor, type Stop } from "../lib/scripts";
 import { useWalkthroughStore } from "../store";
 
@@ -26,6 +29,10 @@ const TICK_MS = 250;
 export const useWalkthroughDriver = () => {
   const { list, setPaused, restart } = useScenarios();
   const setView = useViewStateStore((s) => s.set);
+  // Walkthroughs are scripted against the listener's ndxml scenarios.
+  // In battle / mock / off mode there is no scenario to step through,
+  // so the driver stays dormant and the popup is never rendered.
+  const source = useDataSourceStore((s) => s.source);
 
   const mode = useWalkthroughStore((s) => s.mode);
   const nextStopIdx = useWalkthroughStore((s) => s.nextStopIdx);
@@ -43,6 +50,7 @@ export const useWalkthroughDriver = () => {
   const initRef = useRef(false);
   useEffect(() => {
     if (initRef.current) return;
+    if (source !== "live") return;
     if (!list) return;
     initRef.current = true;
     if (mode === "walkthrough") {
@@ -50,7 +58,7 @@ export const useWalkthroughDriver = () => {
       setPaused(false);
       restart();
     }
-  }, [list, mode, resetForScenario, setPaused, restart]);
+  }, [list, mode, source, resetForScenario, setPaused, restart]);
 
   // Reset + unpause every time the active scenario flips. Without
   // the unpause, switching scenarios while held on a popup leaves
@@ -73,6 +81,7 @@ export const useWalkthroughDriver = () => {
   // and not currently held on a stop. Advances elapsed seconds and
   // checks for the next trigger.
   useEffect(() => {
+    if (source !== "live") return;
     if (mode !== "walkthrough") return;
     if (paused) return;
     if (heldOnStopIdx !== null) return;
@@ -96,10 +105,29 @@ export const useWalkthroughDriver = () => {
       const newElapsed = elapsedSec + delta;
       addElapsed(delta);
       if (newElapsed >= next.atSec) {
-        // Trigger: fly camera, hold, ask backend to pause.
+        // Resolve a target track first (if any) — its live position
+        // wins over the script's hardcoded focus.lat/lon, because the
+        // App-level camera-follow effect will re-center on the
+        // selected track's interpolated position every render-tick.
+        // If we set view to a different lat/lon than the track, the
+        // follow snaps it back and the operator sees a hard jump.
+        let targetLon = next.focus.longitude;
+        let targetLat = next.focus.latitude;
+        if (next.selectCallsign) {
+          const target = selectEventList(useEventStore.getState()).find(
+            (e) => e.callsign === next.selectCallsign,
+          );
+          if (target) {
+            targetLon = target.lon;
+            targetLat = target.lat;
+            useSelectionStore.getState().select(target.uid);
+          }
+        } else {
+          useSelectionStore.getState().deselect();
+        }
         setView({
-          longitude: next.focus.longitude,
-          latitude: next.focus.latitude,
+          longitude: targetLon,
+          latitude: targetLat,
           zoom: next.focus.zoom,
           pitch: next.focus.pitch ?? 45,
           bearing: next.focus.bearing ?? 0,
@@ -111,6 +139,7 @@ export const useWalkthroughDriver = () => {
 
     return () => window.clearInterval(id);
   }, [
+    source,
     mode,
     paused,
     heldOnStopIdx,

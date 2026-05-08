@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type DataSource = "mock" | "live" | "off";
+export type DataSource = "battle" | "live" | "off";
 
 type DataSourceStore = {
   source: DataSource;
@@ -8,6 +8,6 @@ type DataSourceStore = {
 };
 
 export const useDataSourceStore = create<DataSourceStore>((set) => ({
-  source: "mock",
+  source: "live",
   setSource: (source) => set({ source }),
 }));

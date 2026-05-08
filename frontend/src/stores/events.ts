@@ -14,7 +14,27 @@ export const useEventStore = create<EventStore>((set) => ({
   upsertMany: (incoming) =>
     set((state) => {
       const next = { ...state.events };
-      for (const event of incoming) next[event.uid] = event;
+      for (const event of incoming) {
+        // The HEAVY_JAM chaos profile reorders frames. The listener
+        // dedupes by (uid, time) but does not buffer-and-sort, so the
+        // websocket can deliver an older frame after a newer one for
+        // the same uid. Without this guard, the older frame would
+        // overwrite the latest position — the icon snaps backward and
+        // the trail appends a zigzag segment when it next polls.
+        const current = next[event.uid];
+        if (current) {
+          const incomingT = Date.parse(event.time);
+          const currentT = Date.parse(current.time);
+          if (
+            Number.isFinite(incomingT) &&
+            Number.isFinite(currentT) &&
+            incomingT < currentT
+          ) {
+            continue;
+          }
+        }
+        next[event.uid] = event;
+      }
       return { events: next };
     }),
   remove: (uid) =>

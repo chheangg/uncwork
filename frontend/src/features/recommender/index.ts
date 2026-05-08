@@ -1,2 +1,3 @@
-export { RecommenderPanel } from "./components/recommender-panel";
-export { useRecommenderStore } from "./store";
+export { AiRecommenderPanel } from "./components/ai-recommender-panel";
+export { recommendForLink } from "./lib/fake-recommender";
+export type { RecommenderLinkRec, RecommenderOption } from "./store";

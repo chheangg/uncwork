@@ -5,10 +5,11 @@ import { LayerTogglePanel, MapView } from "@/features/map";
 import {
   PlaybackPanel,
   WalkthroughOverlay,
+  WalkthroughComplete,
   useWalkthroughDriver,
 } from "@/features/walkthrough";
-import { RecommenderPanel } from "@/features/recommender";
-import { useLiveFeed } from "@/features/data-source";
+import { AiRecommenderPanel } from "@/features/recommender";
+import { useLiveFeed, useBattleFeed, DataSourceToggle } from "@/features/data-source";
 import {
   buildLinkLayers,
   useAffectedAugment,
@@ -35,6 +36,7 @@ import {
   meanTrust,
 } from "@/features/hud";
 import { useEventStore, selectEventList } from "@/stores/events";
+import { useDataSourceStore } from "@/stores/data-source";
 import { useLayersStore } from "@/stores/layers";
 import { useViewStateStore } from "@/stores/view-state";
 import { HEATMAP_MAX_ZOOM } from "@/config/constants";
@@ -47,6 +49,7 @@ const RENDER_LAG_S = 0.6;
 
 export const App = () => {
   useLiveFeed();
+  useBattleFeed();
   useDerivedLog();
   useWalkthroughDriver();
 
@@ -54,6 +57,7 @@ export const App = () => {
   const augmentedEvents = useAffectedAugment(events);
   const trackPaths = useTrackHistory(augmentedEvents);
   const visible = useLayersStore((s) => s.visible);
+  const dataSource = useDataSourceStore((s) => s.source);
   const viewMode = useLayersStore((s) => s.viewMode);
   const zoomedOut = useViewStateStore(
     (s) => s.viewState.zoom < HEATMAP_MAX_ZOOM,
@@ -159,7 +163,8 @@ export const App = () => {
       <ScreenFrame />
       <MissionHeader trackCount={events.length} meanTrust={meanTrustVal} />
       <aside className="pointer-events-auto absolute top-8 left-2 z-10 flex w-45 flex-col gap-2">
-        <PlaybackPanel />
+        <DataSourceToggle />
+        {dataSource === "live" && <PlaybackPanel />}
         <LayerTogglePanel />
         <StatusSummary
           counts={statusCounts}
@@ -171,10 +176,12 @@ export const App = () => {
       {!detailOpen && (
         <aside className="pointer-events-auto absolute top-8 right-2 bottom-32 z-10 flex w-72 flex-col gap-2 overflow-y-auto pr-1">
           <TypeLegend />
-          <RecommenderPanel />
         </aside>
       )}
       <LinkDetailPanel track={selectedTrack} onClose={deselect} />
+      <AiRecommenderPanel
+        track={selectedTrack ? selectedTrack.latest : null}
+      />
       <TrackContextMenu
         menu={contextMenu}
         onDetail={(uid) => {
@@ -184,6 +191,7 @@ export const App = () => {
         onDismiss={() => setContextMenu(null)}
       />
       <WalkthroughOverlay />
+      <WalkthroughComplete />
       <EventTerminal />
       <FooterStrip />
     </div>

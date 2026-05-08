@@ -44,15 +44,20 @@ A link "requires attention" when ANY of these hold:
   - it is hostile and any nearby friendly is degraded (clustered EW)
 
 For each attention-worthy link, give 2-3 options. Each option must:
-  1. Be a single concrete action verb-first ("Pull missile launch", "Reposition Team 2 NW", "Continue assault").
-  2. Include a one-sentence rationale citing the specific evidence (callsign, trustScore, fingerprint tag, neighbor relationship).
+  1. Be a single concrete action verb-first, AFFILIATION- and DIMENSION-aware:
+     - friendly ground (TEAM-*): "Reposition", "Hold", "Switch to backup comms", "Pull from line".
+     - friendly air (EAGLE-*): "Vector off", "Hand off to backup sensor", "RTB".
+     - hostile (UNKNOWN-*, ENEMY-*): "Cue counter-EW", "Engage with kinetic", "Continue track only".
+     - sensor: "Cross-cue another sensor", "Mark as unreliable".
+     Adapt verbs to the dimension; never recommend kinetic action against a friendly.
+  2. Cite the specific evidence (callsign, trustScore numeric, fingerprint tag + confidence, neighbor relationship). Trust score and fingerprint MUST drive the recommendation — do not suggest acting on a low-trust feed without flagging it, and weight any fingerprint match heavily.
   3. Carry a successProb in 0..1 reflecting your estimate of the action achieving Adam's likely intent (typically: protect friendlies, neutralize threat, preserve mission).
 
 Calibration for successProb:
-  - 0.80-0.95 = high-confidence, evidence is strong, action is conservative.
-  - 0.50-0.79 = reasonable bet, some risk.
-  - 0.20-0.49 = risky, the data argues against this but it might pay off.
-  - 0.05-0.19 = bad option included to show contrast.
+  - 0.80-0.95 = high-confidence, evidence is strong, action is conservative. Use when trustScore is high AND fingerprint is null/low, OR when verifying a low-trust feed.
+  - 0.50-0.79 = reasonable bet, some risk. Use when trust is mid or one piece of evidence is mixed.
+  - 0.20-0.49 = risky, the data argues against this but it might pay off. Use when acting on a low-trust feed without independent confirmation.
+  - 0.05-0.19 = bad option included to show contrast — typically "trust the link as-is" when fingerprint is HIGH.
 
 Then add a short "summary" string (<= 2 sentences) tying the picture together.
 
@@ -97,6 +102,12 @@ pub struct EventIn {
 pub struct RecommendRequest {
     pub scenario: String,
     pub events: Vec<EventIn>,
+    /// Optional callsign the recommender must focus on. When set, the
+    /// model is told to evaluate only this link (using the rest of the
+    /// fleet purely as context for neighbor-drag reasoning) and return
+    /// a single entry in `links`.
+    #[serde(default)]
+    pub focus: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,10 +179,17 @@ fn build_user_message(req: &RecommendRequest) -> String {
         lines.push(fmt_track(e));
     }
     lines.push(String::new());
-    lines.push(
-        "Return JSON per the schema. Identify every link requiring attention and give 2-3 best-first options each, with successProb. Add a short summary."
-            .to_string(),
-    );
+    if let Some(focus) = req.focus.as_deref() {
+        lines.push(format!(
+            "FOCUS: Officer Adam has the link with callsign \"{}\" open in the detail panel. Evaluate ONLY that link. Use the surrounding tracks above purely as neighbor-drag and EW context — do not return entries for them. Output exactly one entry in `links` with that callsign, 2-3 affiliation- and dimension-aware options ranked best-first, and a 1–2 sentence summary that contrasts the operator-with-this-layer view (trust score + fingerprint) against a naive view that would be missing those signals.",
+            focus
+        ));
+    } else {
+        lines.push(
+            "Return JSON per the schema. Identify every link requiring attention and give 2-3 best-first options each, with successProb. Add a short summary."
+                .to_string(),
+        );
+    }
     lines.join("\n")
 }
 
